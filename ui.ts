@@ -466,13 +466,13 @@ export const UI_HTML = `<!DOCTYPE html>
     .spectrum-model-fill { height: 100%; border-radius: 3px; transition: all 0.3s ease; }
     .spectrum-model-stats { color: var(--pearl); font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; }
     /* Crucible & Workshop Blackboards */
-    .blackboard-panel { display: none; margin: 15px 0; background: #1a1a2e; border: 2px solid var(--gold); border-radius: 8px; overflow: hidden; }
+    .blackboard-panel { display: none; position: fixed; left: 20px; top: 150px; width: 400px; background: #1a1a2e; border: 2px solid var(--gold); border-radius: 8px; overflow: hidden; z-index: 500; resize: both; min-width: 300px; min-height: 250px; max-width: 80vw; max-height: 70vh; }
     .blackboard-panel.active { display: block; }
-    .blackboard-header { background: rgba(201, 165, 90, 0.1); padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--gold); }
+    .blackboard-header { background: rgba(201, 165, 90, 0.15); padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--gold); cursor: move; user-select: none; }
     .blackboard-title { color: var(--gold); font-size: 0.85em; letter-spacing: 0.1em; text-transform: uppercase; }
     .blackboard-manager { color: var(--silver); font-size: 0.7em; }
     .blackboard-content { min-height: 200px; max-height: 400px; overflow: auto; }
-    .blackboard-content textarea { width: 100%; min-height: 200px; background: #0d0d1a; color: #e0e0e0; border: none; padding: 15px; font-family: monospace; font-size: 0.85em; resize: vertical; }
+    .blackboard-content textarea { width: 100%; height: 100%; min-height: 150px; background: #0d0d1a; color: #e0e0e0; border: none; padding: 15px; font-family: monospace; font-size: 0.85em; resize: none; box-sizing: border-box; }
     .blackboard-content textarea:focus { outline: none; }
     .crucible-preview { padding: 15px; background: #0d0d1a; color: #e8e4dc; min-height: 100px; }
     .blackboard-actions { padding: 10px 15px; background: rgba(0,0,0,0.2); display: flex; gap: 10px; justify-content: flex-end; }
@@ -2942,20 +2942,12 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     function handleModeChange() {
       var mode = document.getElementById('mode-select').value;
       activeMode = mode;
-      
-      // Reset teams when changing modes
       clearTeamHighlights();
-      
-      // Show/hide hints
       document.getElementById('arena-team-hint').style.display = (mode === 'arena') ? 'block' : 'none';
       document.getElementById('focus-team-hint').style.display = (mode === 'focus') ? 'block' : 'none';
-      
-      // Update focus hint text
       if (mode === 'focus') {
         document.getElementById('focus-team-hint').innerHTML = '✨ Click agents to select your focus group. Selected agents glow gold.';
       }
-      
-      // Show mode banner
       var bannerDiv = document.getElementById('mode-banner');
       var bannerImg = document.getElementById('mode-banner-img');
       if (modeBanners[mode]) {
@@ -2964,8 +2956,6 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       } else {
         bannerDiv.style.display = 'none';
       }
-      
-      // Update button text
       var btn = document.getElementById('chamber-btn');
       if (mode === 'off') {
         document.getElementById('chamber-status').textContent = 'Mode: Off';
@@ -2983,33 +2973,17 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         document.getElementById('chamber-status').textContent = 'Crucible Mode';
         btn.textContent = 'Start Crucible';
         document.getElementById('crucible-panel').classList.add('active');
-        document.getElementById('workshop-panel').classList.remove('active');
         loadCrucibleContent();
       } else if (mode === 'workshop') {
         document.getElementById('chamber-status').textContent = 'Workshop Mode';
         btn.textContent = 'Start Workshop';
-      }
-      // Hide panels when not in those modes
-      if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
-      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
         document.getElementById('workshop-panel').classList.add('active');
-      }
-      // Hide panels when not in those modes
-      if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
-      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
-        document.getElementById('crucible-panel').classList.remove('active');
-      }
-      // Hide panels when not in those modes
-      if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
-      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
         loadWorkshopContent();
       }
-      // Hide panels when not in those modes
       if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
-      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
-      }
+      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active'); }
     }
-    
+
     function handleFocusAgentClick(agentId) {
       var btn = document.querySelector('.agent-btn.' + agentId);
       var idx = focusActiveAgents.indexOf(agentId);
@@ -3043,6 +3017,36 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     }
     
     // Crucible functions
+    // Draggable blackboard panels
+    function makeDraggable(panel) {
+      var header = panel.querySelector(".blackboard-header");
+      var isDragging = false;
+      var offsetX, offsetY;
+      header.addEventListener("mousedown", function(e) {
+        if (e.target.tagName === "BUTTON") return;
+        isDragging = true;
+        offsetX = e.clientX - panel.offsetLeft;
+        offsetY = e.clientY - panel.offsetTop;
+        panel.style.opacity = "0.9";
+      });
+      document.addEventListener("mousemove", function(e) {
+        if (!isDragging) return;
+        panel.style.left = (e.clientX - offsetX) + "px";
+        panel.style.top = (e.clientY - offsetY) + "px";
+      });
+      document.addEventListener("mouseup", function() {
+        isDragging = false;
+        panel.style.opacity = "1";
+      });
+    }
+    // Initialize draggable panels on load
+    window.addEventListener("load", function() {
+      var crucible = document.getElementById("crucible-panel");
+      var workshop = document.getElementById("workshop-panel");
+      if (crucible) makeDraggable(crucible);
+      if (workshop) makeDraggable(workshop);
+    });
+
     function loadCrucibleContent() {
       fetch(API + '/crucible/content', { credentials: 'same-origin' })
         .then(function(res) { return res.json(); })
