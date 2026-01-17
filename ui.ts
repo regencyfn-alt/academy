@@ -1592,38 +1592,43 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       var file = input.files[0];
       if (!file) return;
       
-      // Check size (5MB max)
-      if (file.size > 5 * 1024 * 1024) {
-        showStatus('sanctum-status', 'File too large (max 5MB)', 'error');
+      // Check size (10MB max - streaming can handle more)
+      if (file.size > 10 * 1024 * 1024) {
+        showStatus('sanctum-status', 'File too large (max 10MB)', 'error');
         input.value = '';
         return;
       }
       
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        var base64 = e.target.result.split(',')[1];
-        fetch(API + '/library/images', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            filename: file.name, 
-            data: base64,
-            type: file.type 
-          }),
-          credentials: 'same-origin'
-        })
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          if (data.success) {
-            loadImageLibrary();
-            showStatus('sanctum-status', 'Image uploaded', 'success');
-          } else {
-            showStatus('sanctum-status', data.error || 'Upload failed', 'error');
-          }
-        })
-        .catch(function() { showStatus('sanctum-status', 'Upload failed', 'error'); });
-      };
-      reader.readAsDataURL(file);
+      // Validate type
+      var allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        showStatus('sanctum-status', 'Invalid file type', 'error');
+        input.value = '';
+        return;
+      }
+      
+      showStatus('sanctum-status', 'Uploading...', 'info');
+      
+      // Direct streaming upload - no base64 conversion, no CPU burn
+      fetch(API + '/library/images/direct/' + encodeURIComponent(file.name), {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+        credentials: 'same-origin'
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          loadImageLibrary();
+          showStatus('sanctum-status', 'Image uploaded', 'success');
+        } else {
+          showStatus('sanctum-status', data.error || 'Upload failed', 'error');
+        }
+      })
+      .catch(function(err) { 
+        console.error('Upload error:', err);
+        showStatus('sanctum-status', 'Upload failed', 'error'); 
+      });
       input.value = '';
     }
     
