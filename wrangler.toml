@@ -22,3 +22,9 @@ bucket_name = "clubhouse-docs"
 [vars]
 MENTOR_ASSISTANT_ID = "asst_1XaKhMdOR1KbAP9JXMUDYXsf"
 MENTOR_THREAD_ID = "thread_cYjM9sy84F6ILMlmao2NDSmV"
+
+[triggers.crons]
+crons = ["0 12 * * *"]
+
+[env.production.vars]
+GITHUB_PAT = "your_github_pat_here"
