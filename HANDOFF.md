@@ -26,11 +26,16 @@ KEY POINTS:
 • Performance: Unknown API origin (262 calls @ 9.38s avg)—needs investigation
 
 RECENT CHANGES:
-[List any edits made since last handoff]
-
+• Investigated image upload system - pending-image KV flow analyzed (internal dev reviewing)
+  • Confirmed Crucible & Workshop modes already exist in backend (modes.ts line 6)
+  • Located UI dropdown in ui.ts lines 588-591 - needs Crucible/Workshop options added
+  • Found handleCrucibleSubmit() and handleWorkshopCode() handlers ready in modes.ts
 NEXT PRIORITIES:
-[List what needs doing next]
-
+1. Add Crucible & Workshop options to ui.ts dropdown (line 591)
+  2. Create expandable blackboard panels with drag-to-resize corners
+  3. Wire up blackboard sync to existing handleCrucibleSubmit/handleWorkshopCode
+  4. Fix image upload if internal dev confirms issue
+  5. Test shared editing across multiple participants
 ═══════════════════════════════════════════════════════════
 ```
 
