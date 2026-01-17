@@ -3854,6 +3854,25 @@ ${body.round === body.maxRounds ? '\n*** THIS IS THE FINAL ROUND - DELIVER YOUR 
         return jsonResponse({ success: true, filename: body.filename });
       }
 
+      // PUT /library/images/direct/:filename - streaming upload (no base64, no CPU burn)
+      const directUploadMatch = path.match(/^\/library\/images\/direct\/(.+)$/);
+      if (directUploadMatch && method === 'PUT') {
+        const filename = decodeURIComponent(directUploadMatch[1]);
+        const contentType = request.headers.get('Content-Type') || 'image/png';
+        
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (!allowedTypes.includes(contentType)) {
+          return jsonResponse({ error: 'Invalid file type' }, 400);
+        }
+        
+        // Stream directly to R2 - no base64 decoding needed
+        await env.CLUBHOUSE_DOCS.put(`library/${filename}`, request.body, {
+          httpMetadata: { contentType }
+        });
+        
+        return jsonResponse({ success: true, filename });
+      }
+
       // DELETE /library/images/:filename - delete image
       if (libraryImageMatch && method === 'DELETE') {
         const filename = decodeURIComponent(libraryImageMatch[1]);
