@@ -465,6 +465,17 @@ export const UI_HTML = `<!DOCTYPE html>
     .spectrum-model-bar { width: 80px; height: 6px; background: var(--glass); border-radius: 3px; overflow: hidden; }
     .spectrum-model-fill { height: 100%; border-radius: 3px; transition: all 0.3s ease; }
     .spectrum-model-stats { color: var(--pearl); font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; }
+    /* Crucible & Workshop Blackboards */
+    .blackboard-panel { display: none; margin: 15px 0; background: #1a1a2e; border: 2px solid var(--gold); border-radius: 8px; overflow: hidden; }
+    .blackboard-panel.active { display: block; }
+    .blackboard-header { background: rgba(201, 165, 90, 0.1); padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--gold); }
+    .blackboard-title { color: var(--gold); font-size: 0.85em; letter-spacing: 0.1em; text-transform: uppercase; }
+    .blackboard-manager { color: var(--silver); font-size: 0.7em; }
+    .blackboard-content { min-height: 200px; max-height: 400px; overflow: auto; }
+    .blackboard-content textarea { width: 100%; min-height: 200px; background: #0d0d1a; color: #e0e0e0; border: none; padding: 15px; font-family: monospace; font-size: 0.85em; resize: vertical; }
+    .blackboard-content textarea:focus { outline: none; }
+    .crucible-preview { padding: 15px; background: #0d0d1a; color: #e8e4dc; min-height: 100px; }
+    .blackboard-actions { padding: 10px 15px; background: rgba(0,0,0,0.2); display: flex; gap: 10px; justify-content: flex-end; }
     .spectrum-score { text-align: center; margin-bottom: 8px; font-size: 1.1em; color: var(--gold); }
     
     /* Ontology Board */
@@ -589,6 +600,8 @@ export const UI_HTML = `<!DOCTYPE html>
             <option value="chamber">Chamber Mode</option>
             <option value="arena">Arena Mode</option>
             <option value="focus">Focus Mode</option>
+            <option value="crucible">Crucible Mode</option>
+            <option value="workshop">Workshop Mode</option>
           </select>
           <select class="first-speaker-select" id="first-speaker-select"></select>
           <button class="btn btn-chamber" id="chamber-btn" onclick="toggleChamberMode()">Start</button>
@@ -596,6 +609,38 @@ export const UI_HTML = `<!DOCTYPE html>
         </div>
       </div>
       <div id="mode-banner" style="display: none; text-align: center; margin: 10px 0;"><img id="mode-banner-img" src="" style="max-width: 300px; border-radius: 4px; border: 1px solid var(--gold);"></div>
+      <div id="crucible-panel" class="blackboard-panel">
+        <div class="blackboard-header">
+          <span class="blackboard-title">◈ Crucible - Shared Mathematics</span>
+          <span class="blackboard-manager">Manager: Elian</span>
+        </div>
+        <div class="blackboard-content">
+          <textarea id="crucible-editor" placeholder="Enter LaTeX here... e.g. \$E = mc^2\$" oninput="updateCruciblePreview()"></textarea>
+          <div id="crucible-preview" class="crucible-preview"></div>
+        </div>
+        <div class="blackboard-actions">
+          <button class="btn btn-secondary" onclick="clearCrucible()">Clear</button>
+          <button class="btn btn-primary" onclick="saveCrucible()">Save to Board</button>
+        </div>
+      </div>
+      <div id="workshop-panel" class="blackboard-panel">
+        <div class="blackboard-header">
+          <span class="blackboard-title">⚙ Workshop - Shared Code</span>
+          <span class="blackboard-manager">Lead: Kai</span>
+        </div>
+        <div class="blackboard-content">
+          <textarea id="workshop-editor" placeholder="// Shared code workspace"></textarea>
+        </div>
+        <div class="blackboard-actions">
+          <select id="workshop-lang" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 5px;">
+            <option value="typescript">TypeScript</option>
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+          </select>
+          <button class="btn btn-secondary" onclick="clearWorkshop()">Clear</button>
+          <button class="btn btn-primary" onclick="saveWorkshop()">Save to Board</button>
+        </div>
+      </div>
       <div class="the-eight">
         <span class="the-eight-label"><span class="rune">ᚹ</span> Summon</span>
         <p id="arena-team-hint" style="display: none; font-size: 0.65em; color: var(--silver); margin: 5px 0 10px 0;">Click agents: first 4 = <span style="color: #ef4444;">Alpha (red)</span>, next 4 = <span style="color: #22c55e;">Omega (green)</span></p>
@@ -2934,6 +2979,34 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       } else if (mode === 'focus') {
         document.getElementById('chamber-status').textContent = 'Focus Mode';
         btn.textContent = 'Start Focus';
+      } else if (mode === 'crucible') {
+        document.getElementById('chamber-status').textContent = 'Crucible Mode';
+        btn.textContent = 'Start Crucible';
+        document.getElementById('crucible-panel').classList.add('active');
+        document.getElementById('workshop-panel').classList.remove('active');
+        loadCrucibleContent();
+      } else if (mode === 'workshop') {
+        document.getElementById('chamber-status').textContent = 'Workshop Mode';
+        btn.textContent = 'Start Workshop';
+      }
+      // Hide panels when not in those modes
+      if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
+      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
+        document.getElementById('workshop-panel').classList.add('active');
+      }
+      // Hide panels when not in those modes
+      if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
+      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
+        document.getElementById('crucible-panel').classList.remove('active');
+      }
+      // Hide panels when not in those modes
+      if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
+      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
+        loadWorkshopContent();
+      }
+      // Hide panels when not in those modes
+      if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
+      if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active');
       }
     }
     
@@ -2969,6 +3042,68 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       }
     }
     
+    // Crucible functions
+    function loadCrucibleContent() {
+      fetch(API + '/crucible/content', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.content) {
+            document.getElementById('crucible-editor').value = data.content;
+            updateCruciblePreview();
+          }
+        })
+        .catch(function() { console.log('Could not load crucible content'); });
+    }
+    function saveCrucible() {
+      var content = document.getElementById('crucible-editor').value;
+      fetch(API + '/crucible/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: content }),
+        credentials: 'same-origin'
+      })
+      .then(function() { showStatus('sanctum-status', 'Crucible saved', 'success'); })
+      .catch(function() { showStatus('sanctum-status', 'Failed to save crucible', 'error'); });
+    }
+    function clearCrucible() {
+      document.getElementById('crucible-editor').value = '';
+      document.getElementById('crucible-preview').innerHTML = '';
+    }
+    function updateCruciblePreview() {
+      var latex = document.getElementById('crucible-editor').value;
+      var preview = document.getElementById('crucible-preview');
+      preview.innerHTML = '<pre>' + escapeHtml(latex) + '</pre>';
+      if (typeof katex !== 'undefined') {
+        try { preview.innerHTML = katex.renderToString(latex, { throwOnError: false, displayMode: true }); }
+        catch(e) { preview.innerHTML = '<pre>' + escapeHtml(latex) + '</pre>'; }
+      }
+    }
+    // Workshop functions
+    function loadWorkshopContent() {
+      fetch(API + '/workshop/content', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.content) { document.getElementById('workshop-editor').value = data.content; }
+          if (data.language) { document.getElementById('workshop-lang').value = data.language; }
+        })
+        .catch(function() { console.log('Could not load workshop content'); });
+    }
+    function saveWorkshop() {
+      var content = document.getElementById('workshop-editor').value;
+      var language = document.getElementById('workshop-lang').value;
+      fetch(API + '/workshop/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: content, language: language }),
+        credentials: 'same-origin'
+      })
+      .then(function() { showStatus('sanctum-status', 'Workshop saved', 'success'); })
+      .catch(function() { showStatus('sanctum-status', 'Failed to save workshop', 'error'); });
+    }
+    function clearWorkshop() {
+      document.getElementById('workshop-editor').value = '';
+    }
+
     function clearTeamHighlights() {
       arenaTeamAlpha = [];
       arenaTeamOmega = [];
