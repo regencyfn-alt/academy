@@ -1,0 +1,24 @@
+name = "clubhouse"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "centrefree.com/*", zone_name = "centrefree.com" }
+]
+
+workers_dev = true
+
+[assets]
+directory = "./public"
+
+[[kv_namespaces]]
+binding = "CLUBHOUSE_KV"
+id = "ae46499e995d4122848af4336c8d4cf5"
+
+[[r2_buckets]]
+binding = "CLUBHOUSE_DOCS"
+bucket_name = "clubhouse-docs"
+
+[vars]
+MENTOR_ASSISTANT_ID = "asst_1XaKhMdOR1KbAP9JXMUDYXsf"
+MENTOR_THREAD_ID = "thread_cYjM9sy84F6ILMlmao2NDSmV"
