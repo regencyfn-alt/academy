@@ -3771,6 +3771,37 @@ ${body.round === body.maxRounds ? '\n*** THIS IS THE FINAL ROUND - DELIVER YOUR 
       // ============================================
 
       // GET /anchor - get current anchor image filename
+      // GET /crucible/content - get shared LaTeX content
+      if (path === '/crucible/content' && method === 'GET') {
+        const content = await env.CLUBHOUSE_KV.get('crucible:content');
+        return jsonResponse({ content: content || '' });
+      }
+      
+      // POST /crucible/content - save shared LaTeX content
+      if (path === '/crucible/content' && method === 'POST') {
+        const body = await request.json() as { content: string };
+        await env.CLUBHOUSE_KV.put('crucible:content', body.content || '');
+        return jsonResponse({ success: true });
+      }
+      
+      // GET /workshop/content - get shared code content
+      if (path === '/workshop/content' && method === 'GET') {
+        const content = await env.CLUBHOUSE_KV.get('workshop:content');
+        const language = await env.CLUBHOUSE_KV.get('workshop:language');
+        return jsonResponse({ content: content || '', language: language || 'typescript' });
+      }
+      
+      // POST /workshop/content - save shared code content
+      if (path === '/workshop/content' && method === 'POST') {
+        const body = await request.json() as { content: string; language?: string };
+        await env.CLUBHOUSE_KV.put('workshop:content', body.content || '');
+        if (body.language) {
+          await env.CLUBHOUSE_KV.put('workshop:language', body.language);
+        }
+        return jsonResponse({ success: true });
+      }
+
+
       if (path === '/anchor' && method === 'GET') {
         const filename = await env.CLUBHOUSE_KV.get('anchor:current');
         return jsonResponse({ filename: filename || null });
