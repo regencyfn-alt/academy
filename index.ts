@@ -693,7 +693,7 @@ async function callGPT(prompt: string, systemPrompt: string, env: Env): Promise<
         'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-5.2',
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
@@ -722,7 +722,7 @@ async function callGPTWithImage(prompt: string, systemPrompt: string, imageBase6
         'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-5.2',
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           {
