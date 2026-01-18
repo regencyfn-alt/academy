@@ -128,6 +128,7 @@ export const UI_HTML = `<!DOCTYPE html>
     .agent-btn.alba:hover, .agent-btn.alba.raised { color: #a78bfa; border-color: #a78bfa; }
     .agent-btn.dream:hover, .agent-btn.dream.raised { color: #f472b6; border-color: #f472b6; }
     .agent-btn.nova:hover, .agent-btn.nova.raised { color: #7dd3fc; border-color: #7dd3fc; }
+    .agent-btn.holinna:hover, .agent-btn.holinna.raised { color: #7dd3fc; border-color: #7dd3fc; }
     .agent-btn.cartographer:hover, .agent-btn.cartographer.raised { color: #fcd34d; border-color: #fcd34d; }
     .agent-btn.seraphina:hover, .agent-btn.seraphina.raised { color: #fb923c; border-color: #fb923c; }
     .agent-btn.chrysalis:hover, .agent-btn.chrysalis.raised { color: #c4b5fd; border-color: #c4b5fd; }
@@ -236,6 +237,24 @@ export const UI_HTML = `<!DOCTYPE html>
     }
     
     .agent-card .capabilities { display: none; }
+    
+    .position-badge {
+      position: absolute; top: -8px; left: -8px; width: 24px; height: 24px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 0.75em; font-weight: 600; color: white; z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .agent-card-footer {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 8px 12px; border-top: 1px solid var(--glass-border);
+      background: rgba(0,0,0,0.2);
+    }
+    .position-select {
+      background: var(--slate); border: 1px solid var(--glass-border);
+      color: var(--light); padding: 4px 8px; border-radius: 2px;
+      font-size: 0.7em; cursor: pointer;
+    }
+    .position-select:focus { border-color: var(--gold); outline: none; }
     
     .agent-toggle { 
       display: flex; 
@@ -1336,18 +1355,20 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           }));
         })
         .then(function(agents) {
+          // Sort by position
+          agents.sort(function(a, b) { return (a.position || 99) - (b.position || 99); });
           var activeAgents = agents.filter(function(a) { return a.active; });
-          // Role color map
+          // Role color map (using element colors)
           var roleColors = {
-            'uriel': '🟢',        // Verifier - Green
-            'kai': '🟠',          // Tech - Orange
-            'alba': '🟣',         // Chronicler - Purple
-            'dream': '💗',        // Gem Weaver - Pink
-            'chrysalis': '🩵',    // Emergence - Pale Blue
-            'nova': '🔵',         // Archivist - Blue
-            'cartographer': '🟡', // Frame Shifter - Yellow
-            'seraphina': '🟧',    // Visual - Orange
-            'mentor': '⚪'        // Advisor - White
+            'dream': '🔴',        // Fire - Position 1
+            'kai': '🟠',          // Earth - Position 2
+            'uriel': '🔵',        // Wind - Position 3
+            'holinna': '🩵',      // Water - Position 4
+            'cartographer': '🩵', // Water - Position 5
+            'chrysalis': '🔵',    // Wind - Position 6
+            'seraphina': '🟠',    // Earth - Position 7
+            'alba': '🔴',         // Fire - Position 8
+            'mentor': '⚪'        // Advisor - Isolated
           };
           // Populate summon buttons (only active) with role dots
           document.getElementById('summon-buttons').innerHTML = activeAgents.map(function(a) {
@@ -2010,6 +2031,9 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       fetch(API + '/agents', { credentials: 'same-origin' })
         .then(function(res) { return res.json(); })
         .then(function(agents) { 
+          // Sort by position
+          agents.sort(function(a, b) { return (a.position || 99) - (b.position || 99); });
+          
           // Load active states
           Promise.all(agents.map(function(a) {
             return fetch(API + '/agents/' + a.id + '/active', { credentials: 'same-origin' })
@@ -2030,24 +2054,43 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
               var avatarMap = {};
               avatarStates.forEach(function(s) { avatarMap[s.id] = s.avatar; });
               
+              // Element colors
+              var elementColors = { fire: '#e07a5f', earth: '#81b29a', wind: '#7ec8e3', water: '#5c7a99' };
+              var elementNames = { fire: 'Fire', earth: 'Earth', wind: 'Wind', water: 'Water' };
+              
               document.getElementById('agents-list').innerHTML = agents.map(function(a) { 
                 var isActive = activeMap[a.id];
                 var hasAvatar = avatarMap[a.id];
                 var bgStyle = hasAvatar ? 'style="background-image: url(' + avatarMap[a.id] + ')"' : '';
                 var placeholderHtml = !hasAvatar ? '<div class="agent-card-placeholder"><span class="rune">ᚹ</span></div>' : '';
+                var elementColor = elementColors[a.element] || '#666';
+                var elementName = elementNames[a.element] || '?';
+                var positionBadge = '<div class="position-badge" style="background: ' + elementColor + ';">' + (a.position || '?') + '</div>';
+                var positionSelector = '<select class="position-select" onchange="updateAgentPosition(\\'' + a.id + '\\', this.value)">' +
+                  [1,2,3,4,5,6,7,8].map(function(p) {
+                    var selected = p === a.position ? ' selected' : '';
+                    return '<option value="' + p + '"' + selected + '>' + p + '</option>';
+                  }).join('') +
+                '</select>';
+                
                 return '<div class="agent-card ' + a.id + (isActive ? '' : ' disabled') + '">' +
                   placeholderHtml +
                   '<div class="agent-card-bg" ' + bgStyle + '></div>' +
                   '<div class="agent-card-overlay"></div>' +
                   '<div class="agent-card-content">' +
                     '<div class="agent-card-info">' +
+                      positionBadge +
                       '<h3>' + escapeHtml(a.name) + '</h3>' +
                       '<div class="archetype">' + escapeHtml(a.archetype) + '</div>' +
-                      '<div class="model">' + a.model + '</div>' +
+                      '<div class="model">' + a.model + ' · ' + elementName + '</div>' +
                     '</div>' +
                     '<div class="agent-toggle">' +
                       '<div class="toggle-switch' + (isActive ? ' active' : '') + '" onclick="toggleAgent(\\'' + a.id + '\\', this)"></div>' +
                     '</div>' +
+                  '</div>' +
+                  '<div class="agent-card-footer">' +
+                    '<label style="font-size: 0.65em; color: var(--silver);">Position: </label>' +
+                    positionSelector +
                   '</div>' +
                 '</div>'; 
               }).join(''); 
@@ -2069,6 +2112,27 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         el.classList.toggle('active');
         el.closest('.agent-card').classList.toggle('disabled');
         loadAgents(); // Refresh summon buttons
+      });
+    }
+    
+    function updateAgentPosition(agentId, newPosition) {
+      fetch(API + '/agents/' + agentId + '/position', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ position: parseInt(newPosition) }),
+        credentials: 'same-origin'
+      }).then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          loadTheEight(); // Refresh cards with new positions
+          loadAgents(); // Refresh Sanctum buttons in position order
+          showStatus('sanctum-status', 'Position updated', 'success');
+        } else if (data.error) {
+          showStatus('sanctum-status', data.error, 'error');
+          loadTheEight(); // Reset selector to actual value
+        }
+      }).catch(function() {
+        showStatus('sanctum-status', 'Failed to update position', 'error');
       });
     }
     
