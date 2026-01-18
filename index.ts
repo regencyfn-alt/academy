@@ -3272,6 +3272,7 @@ export default {
           team?: string;
           teamAlpha?: string[];
           teamOmega?: string[];
+          mode?: string;
         };
         const agentId = body.agentId || body.agent;
         const agent = getPersonality(agentId || '');
@@ -3379,9 +3380,82 @@ ${body.round === body.maxRounds ? '\n*** THIS IS THE FINAL ROUND - DELIVER YOUR 
 ---`;
         }
         
+        // Add Crucible Mode context if active
+        if (body.mode === 'crucible') {
+          const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+          context += `\n\n--- ◈ CRUCIBLE MODE ACTIVE ---
+Manager: Elian (Cartographer)
+
+You are contributing to a shared mathematics board. Current board content:
+\`\`\`latex
+${crucibleContent || '(empty - add your mathematical notation)'}
+\`\`\`
+
+INSTRUCTIONS:
+1. Include mathematical expressions in LaTeX notation (use $...$ for inline or $$...$$ for display)
+2. Your LaTeX will be automatically extracted and added to the shared board
+3. Build on previous contributions - this is collaborative mathematics
+4. Be precise with notation - this is for a physics paper
+---`;
+        }
+        
+        // Add Workshop Mode context if active
+        if (body.mode === 'workshop') {
+          const workshopContent = await env.CLUBHOUSE_KV.get('workshop:content') || '';
+          const workshopLang = await env.CLUBHOUSE_KV.get('workshop:language') || 'typescript';
+          context += `\n\n--- ⚙ WORKSHOP MODE ACTIVE ---
+Lead: Kai
+
+You are contributing to a shared code board. Language: ${workshopLang}
+Current board content:
+\`\`\`${workshopLang}
+${workshopContent || '// (empty - add your code)'}
+\`\`\`
+
+INSTRUCTIONS:
+1. Include code in fenced code blocks (\`\`\`${workshopLang} ... \`\`\`)
+2. Your code will be automatically extracted and added to the shared board
+3. Build on previous contributions - this is collaborative coding
+4. Comment your additions clearly
+---`;
+        }
+        
         context += '\n\nRespond to the conversation as ' + displayName + '. Be concise but substantive.';
         
         const response = await callAgentWithImage(agent, context, recentImage, env);
+        
+        // Route to Crucible board if mode is active
+        if (body.mode === 'crucible') {
+          const latexPatterns = [
+            /\$\$[\s\S]*?\$\$/g,           // Display math $$...$$
+            /\$[^$\n]+\$/g,                 // Inline math $...$
+            /\\begin\{[^}]+\}[\s\S]*?\\end\{[^}]+\}/g  // LaTeX environments
+          ];
+          let latexMatches: string[] = [];
+          for (const pattern of latexPatterns) {
+            const matches = response.match(pattern);
+            if (matches) latexMatches = latexMatches.concat(matches);
+          }
+          if (latexMatches.length > 0) {
+            const existingContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+            const timestamp = new Date().toISOString();
+            const newEntry = `\n\n% --- ${displayName} (${timestamp}) ---\n${latexMatches.join('\n')}`;
+            await env.CLUBHOUSE_KV.put('crucible:content', (existingContent + newEntry).trim());
+          }
+        }
+        
+        // Route to Workshop board if mode is active
+        if (body.mode === 'workshop') {
+          const codePattern = /```[\s\S]*?```/g;
+          const codeMatches = response.match(codePattern);
+          if (codeMatches && codeMatches.length > 0) {
+            const existingContent = await env.CLUBHOUSE_KV.get('workshop:content') || '';
+            const timestamp = new Date().toISOString();
+            const cleanedCode = codeMatches.map(c => c.replace(/```\w*\n?/g, '').replace(/```$/g, '')).join('\n\n');
+            const newEntry = `\n\n// --- ${displayName} (${timestamp}) ---\n${cleanedCode}`;
+            await env.CLUBHOUSE_KV.put('workshop:content', (existingContent + newEntry).trim());
+          }
+        }
         
         state.messages.push({
           speaker: displayName,
