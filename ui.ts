@@ -1952,7 +1952,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         alcoveHistory.push({ speaker: '...', agentId: agent, content: agentName + ' contemplating...' }); 
         renderAlcoveMessages(); 
         
-        var payload = { agent: agent, message: message };
+        var payload = { agent: agent, message: message, mode: activeMode };
         if (image && agentIndex === 0) payload.image = image.data; // Only first agent gets image
         
         fetch(API + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), credentials: 'same-origin' })
@@ -1961,6 +1961,10 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             alcoveHistory.pop(); 
             alcoveHistory.push({ speaker: data.agent, agentId: agent, content: data.response }); 
             renderAlcoveMessages();
+            
+            // Reload boards if in crucible/workshop mode
+            if (activeMode === 'crucible') loadCrucibleContent();
+            if (activeMode === 'workshop') loadWorkshopContent();
             
             // Play agent voice if sound enabled
             if (soundEnabled && data.response) {
