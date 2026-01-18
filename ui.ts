@@ -1761,7 +1761,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         handleFocusAgentClick(agent);
         return;
       }
-      var btn = document.querySelector('.agent-btn.' + agent); var orig = btn.textContent; btn.innerHTML = orig + '<span class="loading"></span>'; btn.disabled = true; fetch(API + '/campfire/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: agent }), credentials: 'same-origin' }).then(function() { loadSanctum(); }).catch(function() { showStatus('sanctum-status', 'The summons went unanswered', 'error'); }).finally(function() { btn.textContent = orig; btn.disabled = false; }); }
+      var btn = document.querySelector('.agent-btn.' + agent); var orig = btn.textContent; btn.innerHTML = orig + '<span class="loading"></span>'; btn.disabled = true; fetch(API + '/campfire/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: agent, mode: activeMode }), credentials: 'same-origin' }).then(function() { loadSanctum(); if (activeMode === 'crucible') loadCrucibleContent(); if (activeMode === 'workshop') loadWorkshopContent(); }).catch(function() { showStatus('sanctum-status', 'The summons went unanswered', 'error'); }).finally(function() { btn.textContent = orig; btn.disabled = false; }); }
     function archiveSanctum() { if (!confirm('Preserve this council and clear the sanctum?')) return; fetch(API + '/campfire/archive', { method: 'POST', credentials: 'same-origin' }).then(function() { loadSanctum(); showStatus('sanctum-status', 'Council preserved', 'success'); }).catch(function() { showStatus('sanctum-status', 'Failed to preserve', 'error'); }); }
     var alcoveHistory = [];
     var alcovePendingImage = null;
@@ -3233,12 +3233,14 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       fetch(API + '/campfire/speak', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ agentId: agentId, chamberMode: true, round: chamberRound, maxRounds: chamberMaxRounds, firstSpeaker: chamberFirstSpeaker }), 
+        body: JSON.stringify({ agentId: agentId, chamberMode: true, round: chamberRound, maxRounds: chamberMaxRounds, firstSpeaker: chamberFirstSpeaker, mode: activeMode }), 
         credentials: 'same-origin' 
       })
       .then(function(res) { return res.json(); })
       .then(function(data) {
         loadSanctum();
+        if (activeMode === 'crucible') loadCrucibleContent();
+        if (activeMode === 'workshop') loadWorkshopContent();
         
         if (!chamberRunning) return;
         
@@ -3747,10 +3749,10 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       fetch(API + '/campfire/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent: current.agentId }),
+        body: JSON.stringify({ agent: current.agentId, mode: activeMode }),
         credentials: 'same-origin'
       })
-        .then(function() { loadSanctum(); })
+        .then(function() { loadSanctum(); if (activeMode === 'crucible') loadCrucibleContent(); if (activeMode === 'workshop') loadWorkshopContent(); })
         .then(function() {
           // Remove from queue
           freeFloorQueue.shift();
