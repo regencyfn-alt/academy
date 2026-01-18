@@ -3235,6 +3235,8 @@ ${contextMessage}`;
           timerDuration: body.timerMinutes || 30,
         };
         await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+        // Clear any stale image from previous council
+        await env.CLUBHOUSE_KV.delete('campfire:latest-image');
         return jsonResponse({ success: true, topic: state.topic, timerDuration: state.timerDuration });
       }
 
@@ -3244,11 +3246,16 @@ ${contextMessage}`;
         const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
         if (!state) return jsonResponse({ error: 'No active campfire' }, 400);
         
+        // Store image separately for fast agent retrieval (avoids parsing huge state)
+        if (body.image) {
+          await env.CLUBHOUSE_KV.put('campfire:latest-image', body.image);
+        }
+        
         state.messages.push({
           speaker: 'Shane',
           agentId: 'shane',
           content: body.message || '',
-          image: body.image,
+          image: body.image,  // Keep full image for UI rendering
           timestamp: new Date().toISOString(),
         });
         
@@ -3362,12 +3369,18 @@ ${contextMessage}`;
         const customName = await env.CLUBHOUSE_KV.get(`name:${agent.id}`);
         const displayName = customName || agent.name;
         
-        // Find the most recent image in conversation (if any)
+        // Find the most recent image - fetch from separate key (faster, no state bloat)
         let recentImage: string | undefined;
-        for (let i = state.messages.length - 1; i >= 0; i--) {
-          if (state.messages[i].image) {
-            recentImage = state.messages[i].image;
-            break;
+        const latestImage = await env.CLUBHOUSE_KV.get('campfire:latest-image');
+        if (latestImage) {
+          recentImage = latestImage;
+        } else {
+          // Fallback: scan messages (for backwards compatibility with old state)
+          for (let i = state.messages.length - 1; i >= 0; i--) {
+            if (state.messages[i].image && state.messages[i].image.startsWith('data:')) {
+              recentImage = state.messages[i].image;
+              break;
+            }
           }
         }
         
