@@ -30,7 +30,7 @@ export const UI_HTML = `<!DOCTYPE html>
     .hero { position: absolute; top: 0; left: 0; width: 100%; height: auto; z-index: -1; }
     .hero-image { width: 100%; height: 100%; object-fit: cover; object-position: center center; }
     .hero-overlay { display: none; }
-    .hero-content { position: relative; width: 100%; min-height: 45vh; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 30px; }
+    .hero-content { position: relative; width: 100%; min-height: 22vh; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 30px; }
     .hero-content h1 { font-family: 'Cormorant Garamond', serif; font-size: clamp(2.5em, 8vw, 4.5em); font-weight: 300; color: var(--pearl); letter-spacing: 0.25em; text-transform: uppercase; text-shadow: 0 4px 40px rgba(0,0,0,0.8); margin-bottom: 12px; text-align: center; }
     .hero-content .subtitle { font-family: 'Raleway', sans-serif; font-size: clamp(0.65em, 2vw, 0.9em); color: var(--pearl); letter-spacing: 0.35em; text-transform: uppercase; font-weight: 400; }
     .nav { display: flex; justify-content: center; align-items: flex-start; gap: 20px; padding: 20px 15px; background: transparent; flex-wrap: wrap; position: relative; z-index: 1; }
