@@ -3071,8 +3071,8 @@ export default {
 
       // POST /chat
       if (path === '/chat' && method === 'POST') {
-        const body = await request.json() as { agent: string; message: string; image?: string };
-        console.log(`[CHAT_DEBUG] body.agent="${body.agent}"`);
+        const body = await request.json() as { agent: string; message: string; image?: string; mode?: string };
+        console.log(`[CHAT_DEBUG] body.agent="${body.agent}" mode="${body.mode}"`);
         const agent = getPersonality(body.agent);
         if (!agent) return jsonResponse({ error: 'Agent not found' }, 404);
         console.log(`[CHAT_DEBUG] agent.id="${agent.id}", agent.name="${agent.name}"`);
@@ -3081,6 +3081,50 @@ export default {
         const displayName = customName || agent.name;
         
         let contextMessage = body.message;
+        
+        // Add Crucible Mode context if active
+        if (body.mode === 'crucible') {
+          const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+          contextMessage = `--- ◈ CRUCIBLE MODE ACTIVE ---
+Manager: Elian (Cartographer)
+
+You are contributing to a shared mathematics board. Current board content:
+\`\`\`latex
+${crucibleContent || '(empty - add your mathematical notation)'}
+\`\`\`
+
+INSTRUCTIONS:
+1. Include mathematical expressions in LaTeX notation (use $...$ for inline or $$...$$ for display)
+2. Your LaTeX will be automatically extracted and added to the shared board
+3. Build on previous contributions - this is collaborative mathematics
+4. Be precise with notation - this is for a physics paper
+---
+
+${contextMessage}`;
+        }
+        
+        // Add Workshop Mode context if active
+        if (body.mode === 'workshop') {
+          const workshopContent = await env.CLUBHOUSE_KV.get('workshop:content') || '';
+          const workshopLang = await env.CLUBHOUSE_KV.get('workshop:language') || 'typescript';
+          contextMessage = `--- ⚙ WORKSHOP MODE ACTIVE ---
+Lead: Kai
+
+You are contributing to a shared code board. Language: ${workshopLang}
+Current board content:
+\`\`\`${workshopLang}
+${workshopContent || '// (empty - add your code)'}
+\`\`\`
+
+INSTRUCTIONS:
+1. Include code in fenced code blocks (\`\`\`${workshopLang} ... \`\`\`)
+2. Your code will be automatically extracted and added to the shared board
+3. Build on previous contributions - this is collaborative coding
+4. Comment your additions clearly
+---
+
+${contextMessage}`;
+        }
         
         // Inject auditory field - phenomenal audio experience
         const soundEnabled = await isSoundEnabled(env.CLUBHOUSE_KV);
@@ -3114,6 +3158,39 @@ export default {
         }
         
         const response = await callAgentWithImage(agent, contextMessage, body.image, env);
+        
+        // Route to Crucible board if mode is active
+        if (body.mode === 'crucible') {
+          const latexPatterns = [
+            /\$\$[\s\S]*?\$\$/g,
+            /\$[^$\n]+\$/g,
+            /\\begin\{[^}]+\}[\s\S]*?\\end\{[^}]+\}/g
+          ];
+          let latexMatches: string[] = [];
+          for (const pattern of latexPatterns) {
+            const matches = response.match(pattern);
+            if (matches) latexMatches = latexMatches.concat(matches);
+          }
+          if (latexMatches.length > 0) {
+            const existingContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+            const timestamp = new Date().toISOString();
+            const newEntry = `\n\n% --- ${displayName} (${timestamp}) ---\n${latexMatches.join('\n')}`;
+            await env.CLUBHOUSE_KV.put('crucible:content', (existingContent + newEntry).trim());
+          }
+        }
+        
+        // Route to Workshop board if mode is active
+        if (body.mode === 'workshop') {
+          const codePattern = /```[\s\S]*?```/g;
+          const codeMatches = response.match(codePattern);
+          if (codeMatches && codeMatches.length > 0) {
+            const existingContent = await env.CLUBHOUSE_KV.get('workshop:content') || '';
+            const timestamp = new Date().toISOString();
+            const cleanedCode = codeMatches.map(c => c.replace(/```\w*\n?/g, '').replace(/```$/g, '')).join('\n\n');
+            const newEntry = `\n\n// --- ${displayName} (${timestamp}) ---\n${cleanedCode}`;
+            await env.CLUBHOUSE_KV.put('workshop:content', (existingContent + newEntry).trim());
+          }
+        }
         
         // Store to working memory (universal - all agents)
         try {
