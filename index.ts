@@ -2848,6 +2848,7 @@ export default {
       if (path === '/agents' && method === 'GET') {
         const agents = await Promise.all(getAllAgents().map(async (a) => {
           const customName = await env.CLUBHOUSE_KV.get(`name:${a.id}`);
+          const customPosition = await env.CLUBHOUSE_KV.get(`position:${a.id}`);
           return {
             id: a.id,
             name: customName || a.name,
@@ -2855,8 +2856,13 @@ export default {
             archetype: a.archetype,
             model: a.model,
             capabilities: a.capabilities,
+            position: customPosition ? parseInt(customPosition) : a.position,
+            element: a.element,
+            complement: a.complement,
           };
         }));
+        // Sort by position
+        agents.sort((a, b) => (a.position || 99) - (b.position || 99));
         return jsonResponse(agents);
       }
       
@@ -2865,6 +2871,7 @@ export default {
         const agents = await Promise.all(getAllAgentsIncludingIsolated().map(async (a) => {
           const customName = await env.CLUBHOUSE_KV.get(`name:${a.id}`);
           const active = await env.CLUBHOUSE_KV.get(`active:${a.id}`);
+          const customPosition = await env.CLUBHOUSE_KV.get(`position:${a.id}`);
           return {
             id: a.id,
             name: customName || a.name,
@@ -2874,8 +2881,12 @@ export default {
             capabilities: a.capabilities,
             active: active !== 'false',
             isolated: (a as any).isolated || false,
+            position: customPosition ? parseInt(customPosition) : a.position,
+            element: a.element,
           };
         }));
+        // Sort by position
+        agents.sort((a, b) => (a.position || 99) - (b.position || 99));
         return jsonResponse(agents);
       }
 
@@ -4673,6 +4684,45 @@ INSTRUCTIONS:
         const body = await request.json() as { active: boolean };
         await env.CLUBHOUSE_KV.put(`active:${agentId}`, body.active ? 'true' : 'false');
         return jsonResponse({ success: true });
+      }
+
+      // GET /agents/:id/position - get position
+      const positionGetMatch = path.match(/^\/agents\/([^\/]+)\/position$/);
+      if (positionGetMatch && method === 'GET') {
+        const agentId = positionGetMatch[1];
+        const position = await env.CLUBHOUSE_KV.get(`position:${agentId}`);
+        return jsonResponse({ agentId, position: position ? parseInt(position) : null });
+      }
+
+      // PUT /agents/:id/position - set position (swap with current occupant)
+      if (positionGetMatch && method === 'PUT') {
+        const agentId = positionGetMatch[1];
+        const body = await request.json() as { position: number };
+        const newPosition = body.position;
+        
+        if (newPosition < 1 || newPosition > 8) {
+          return jsonResponse({ error: 'Position must be 1-8' }, 400);
+        }
+        
+        // Find who currently occupies this position
+        const agents = getAllAgents();
+        const currentOccupant = agents.find(a => a.position === newPosition);
+        const movingAgent = agents.find(a => a.id === agentId);
+        
+        if (!movingAgent) {
+          return jsonResponse({ error: 'Agent not found' }, 404);
+        }
+        
+        // Swap positions
+        if (currentOccupant && currentOccupant.id !== agentId) {
+          // Swap: current occupant gets moving agent's old position
+          await env.CLUBHOUSE_KV.put(`position:${currentOccupant.id}`, String(movingAgent.position));
+        }
+        
+        // Set new position for moving agent
+        await env.CLUBHOUSE_KV.put(`position:${agentId}`, String(newPosition));
+        
+        return jsonResponse({ success: true, position: newPosition });
       }
 
       // GET /ontology - list all canon entries
