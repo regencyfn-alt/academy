@@ -723,6 +723,14 @@ export const UI_HTML = `<!DOCTYPE html>
           <button class="btn btn-secondary" onclick="saveAlcoveSession()" title="Save this conversation">💾</button>
           <button class="btn btn-primary" onclick="sendAlcove()">Send</button>
         </div>
+        <div class="chamber-controls" style="margin-top: 8px;">
+          <span class="chamber-status" id="alcove-mode-status">Board: Off</span>
+          <select class="mode-select" id="alcove-mode-select" onchange="handleAlcoveModeChange()" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 6px 10px; border-radius: 2px; font-size: 0.7em;">
+            <option value="off">No Board</option>
+            <option value="crucible">Crucible (LaTeX)</option>
+            <option value="workshop">Workshop (Code)</option>
+          </select>
+        </div>
       </div>
       
       <!-- Sensation Layer Control (Shane only - invisible to agents) -->
@@ -1764,6 +1772,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       var btn = document.querySelector('.agent-btn.' + agent); var orig = btn.textContent; btn.innerHTML = orig + '<span class="loading"></span>'; btn.disabled = true; fetch(API + '/campfire/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: agent, mode: activeMode }), credentials: 'same-origin' }).then(function() { loadSanctum(); if (activeMode === 'crucible') loadCrucibleContent(); if (activeMode === 'workshop') loadWorkshopContent(); }).catch(function() { showStatus('sanctum-status', 'The summons went unanswered', 'error'); }).finally(function() { btn.textContent = orig; btn.disabled = false; }); }
     function archiveSanctum() { if (!confirm('Preserve this council and clear the sanctum?')) return; fetch(API + '/campfire/archive', { method: 'POST', credentials: 'same-origin' }).then(function() { loadSanctum(); showStatus('sanctum-status', 'Council preserved', 'success'); }).catch(function() { showStatus('sanctum-status', 'Failed to preserve', 'error'); }); }
     var alcoveHistory = [];
+    var alcoveMode = 'off';
     var alcovePendingImage = null;
     var sanctumPendingImage = null;
     var alcovePendingText = null;
@@ -1952,7 +1961,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         alcoveHistory.push({ speaker: '...', agentId: agent, content: agentName + ' contemplating...' }); 
         renderAlcoveMessages(); 
         
-        var payload = { agent: agent, message: message, mode: activeMode };
+        var payload = { agent: agent, message: message, mode: alcoveMode };
         if (image && agentIndex === 0) payload.image = image.data; // Only first agent gets image
         
         fetch(API + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), credentials: 'same-origin' })
@@ -1963,8 +1972,8 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             renderAlcoveMessages();
             
             // Reload boards if in crucible/workshop mode
-            if (activeMode === 'crucible') loadCrucibleContent();
-            if (activeMode === 'workshop') loadWorkshopContent();
+            if (alcoveMode === 'crucible') loadCrucibleContent();
+            if (alcoveMode === 'workshop') loadWorkshopContent();
             
             // Play agent voice if sound enabled
             if (soundEnabled && data.response) {
@@ -2986,6 +2995,29 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       }
       if (mode !== 'crucible') { document.getElementById('crucible-panel').classList.remove('active'); }
       if (mode !== 'workshop') { document.getElementById('workshop-panel').classList.remove('active'); }
+    }
+
+    function handleAlcoveModeChange() {
+      var mode = document.getElementById('alcove-mode-select').value;
+      alcoveMode = mode;
+      var statusEl = document.getElementById('alcove-mode-status');
+      if (mode === 'off') {
+        statusEl.textContent = 'Board: Off';
+      } else if (mode === 'crucible') {
+        statusEl.textContent = 'Board: Crucible';
+        document.getElementById('crucible-panel').classList.add('active');
+        loadCrucibleContent();
+      } else if (mode === 'workshop') {
+        statusEl.textContent = 'Board: Workshop';
+        document.getElementById('workshop-panel').classList.add('active');
+        loadWorkshopContent();
+      }
+      // Hide boards if alcove mode is off (but don't affect sanctum's activeMode)
+      if (mode === 'off') {
+        // Only hide if sanctum's activeMode also isn't using them
+        if (activeMode !== 'crucible') document.getElementById('crucible-panel').classList.remove('active');
+        if (activeMode !== 'workshop') document.getElementById('workshop-panel').classList.remove('active');
+      }
     }
 
     function handleFocusAgentClick(agentId) {
