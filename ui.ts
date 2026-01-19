@@ -600,6 +600,7 @@ export const UI_HTML = `<!DOCTYPE html>
       <button id="vision-toggle" class="control-btn enabled" onclick="toggleVisionEnabled()">&#x1F441;</button>
       <button id="sound-toggle" class="control-btn disabled" onclick="toggleSoundEnabled()">&#x1F507;</button>
       <button id="temporal-toggle" class="control-btn disabled" onclick="toggleTemporalEnabled()" title="Temporal Resonance">&#x1F300;</button>
+      <button id="screening-toggle" class="control-btn disabled" onclick="toggleScreening()" title="No screening loaded">&#x1F3AC;</button>
       <button id="kill-voices-btn" class="control-btn" onclick="killVoices()" title="Stop all voices">&#x1F6D1;</button>
       <button class="control-btn logout" onclick="logout()">&#x23FB;</button>
     </div>
@@ -1407,7 +1408,51 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         .catch(function() {});
     }
     
-    window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); checkTemporalStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); });
+    // Screening Room State
+    var screeningActive = false;
+    var screeningFilename = '';
+    
+    function checkScreeningStatus() {
+      fetch(API + '/api/screening/status', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          screeningActive = data.active;
+          screeningFilename = data.filename || '';
+          
+          var btn = document.getElementById('screening-toggle');
+          btn.className = 'control-btn ' + (screeningActive ? 'enabled' : 'disabled');
+          
+          if (screeningActive) {
+            btn.title = 'Screening: ' + screeningFilename + ' (click to end)';
+          } else {
+            btn.title = 'No screening loaded';
+          }
+        })
+        .catch(function() {});
+    }
+    
+    function toggleScreening() {
+      if (!screeningActive) {
+        alert('No screening loaded. Upload a video from michronics.com/theater.html');
+        return;
+      }
+      
+      if (confirm('End screening session for "' + screeningFilename + '"?')) {
+        fetch(API + '/api/screening/end', { method: 'POST', credentials: 'same-origin' })
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data.success) {
+              screeningActive = false;
+              screeningFilename = '';
+              var btn = document.getElementById('screening-toggle');
+              btn.className = 'control-btn disabled';
+              btn.title = 'No screening loaded';
+            }
+          });
+      }
+    }
+    
+    window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); checkTemporalStatus(); checkScreeningStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); });
     function logout() { fetch('/logout', { method: 'POST', credentials: 'same-origin' }).then(function() { window.location.href = '/login'; }); }
     
     function toggleSoundEnabled() {
