@@ -495,6 +495,296 @@ async function handleTemporalStatus(env: Env): Promise<Response> {
   });
 }
 
+// ============================================
+// SCREENING ROOM HANDLERS
+// ============================================
+
+const SCREENING_STATE_KEY = 'screening:state';
+const SCREENING_MANIFEST_KEY = 'screening:manifest';
+const SCREENING_FRAMES_PREFIX = 'screening/frames/';
+
+interface ScreeningManifest {
+  id: string;
+  version: string;
+  type: string;
+  created: string;
+  source: {
+    filename: string;
+    duration: number;
+    durationFormatted: string;
+    fps: number;
+    totalFrames: number;
+    resolution: { width: number; height: number };
+  };
+  hierarchy: Array<{
+    name: string;
+    interval: number;
+    description: string;
+    frameCount: number;
+    frames: number[];
+  }>;
+  perception_guide: {
+    recommended_start: string;
+    progression: string[];
+    strategy: string;
+  };
+}
+
+interface ScreeningState {
+  active: boolean;
+  manifestId: string | null;
+  currentLevel: string;
+  viewedFrames: number[];
+  lastAccessed: number;
+}
+
+interface KeyframeData {
+  index: number;
+  time: number;
+  timeFormatted: string;
+  image: string;
+}
+
+async function getScreeningState(kv: KVNamespace): Promise<ScreeningState | null> {
+  const raw = await kv.get(SCREENING_STATE_KEY);
+  if (!raw) return null;
+  return JSON.parse(raw);
+}
+
+async function getScreeningManifest(kv: KVNamespace): Promise<ScreeningManifest | null> {
+  const raw = await kv.get(SCREENING_MANIFEST_KEY);
+  if (!raw) return null;
+  return JSON.parse(raw);
+}
+
+function generateScreeningContext(manifest: ScreeningManifest, state: ScreeningState): string {
+  const level = manifest.hierarchy.find(l => l.name === state.currentLevel);
+  const viewedCount = state.viewedFrames.length;
+  const totalKeyframes = manifest.hierarchy[0]?.frameCount || 0;
+  
+  return `[SCREENING ROOM]
+Now showing: "${manifest.source.filename}"
+Duration: ${manifest.source.durationFormatted} | ${manifest.source.totalFrames} frames @ ${manifest.source.fps}fps
+
+Current view: ${state.currentLevel} level (${level?.frameCount || 0} keyframes)
+Frames examined: ${viewedCount}/${totalKeyframes} keyframes
+
+Hierarchy available:
+${manifest.hierarchy.map(l => `  - ${l.name}: ${l.frameCount} frames (${l.description})`).join('\n')}
+
+${manifest.perception_guide.strategy}
+
+Commands:
+  [VIEW_LEVEL: Arc|Scene|Action|Motion] - Switch hierarchy level
+  [VIEW_FRAME: N] - Request specific frame by index
+  [DESCRIBE_SEQUENCE: start-end] - Analyze frame range
+`;
+}
+
+async function handleScreeningUpload(request: Request, env: Env): Promise<Response> {
+  try {
+    const body = await request.json() as { 
+      manifest: ScreeningManifest; 
+      keyframes: KeyframeData[];
+    };
+    
+    if (!body.manifest || !body.keyframes) {
+      return new Response(JSON.stringify({ error: 'Missing manifest or keyframes' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+    
+    // Generate screening ID
+    const id = `scr_${Date.now()}`;
+    body.manifest.id = id;
+    
+    // Store manifest in KV
+    await env.CLUBHOUSE_KV.put(SCREENING_MANIFEST_KEY, JSON.stringify(body.manifest));
+    
+    // Store frames in R2
+    let storedCount = 0;
+    for (const frame of body.keyframes) {
+      let imageData = frame.image;
+      if (imageData.startsWith('data:')) {
+        imageData = imageData.split(',')[1];
+      }
+      
+      const key = `${SCREENING_FRAMES_PREFIX}${id}/${frame.index}.jpg`;
+      const buffer = Uint8Array.from(atob(imageData), c => c.charCodeAt(0));
+      
+      await env.CLUBHOUSE_DOCS.put(key, buffer, {
+        httpMetadata: { contentType: 'image/jpeg' },
+        customMetadata: {
+          time: frame.time.toString(),
+          timeFormatted: frame.timeFormatted
+        }
+      });
+      storedCount++;
+    }
+    
+    // Initialize screening state
+    const state: ScreeningState = {
+      active: true,
+      manifestId: id,
+      currentLevel: 'Arc',
+      viewedFrames: [],
+      lastAccessed: Date.now()
+    };
+    await env.CLUBHOUSE_KV.put(SCREENING_STATE_KEY, JSON.stringify(state));
+    
+    return new Response(JSON.stringify({ success: true, id, frameCount: storedCount }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+}
+
+async function handleScreeningStatus(env: Env): Promise<Response> {
+  const state = await getScreeningState(env.CLUBHOUSE_KV);
+  const manifest = await getScreeningManifest(env.CLUBHOUSE_KV);
+  
+  if (!state?.active || !manifest) {
+    return new Response(JSON.stringify({ active: false }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+  
+  return new Response(JSON.stringify({
+    active: true,
+    id: state.manifestId,
+    filename: manifest.source.filename,
+    duration: manifest.source.durationFormatted,
+    totalFrames: manifest.source.totalFrames,
+    currentLevel: state.currentLevel,
+    viewedFrames: state.viewedFrames.length,
+    hierarchy: manifest.hierarchy.map(l => ({ name: l.name, count: l.frameCount }))
+  }), {
+    headers: { 'Content-Type': 'application/json', ...corsHeaders }
+  });
+}
+
+async function handleScreeningManifest(env: Env): Promise<Response> {
+  const manifest = await getScreeningManifest(env.CLUBHOUSE_KV);
+  
+  if (!manifest) {
+    return new Response(JSON.stringify({ error: 'No active screening' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+  
+  return new Response(JSON.stringify(manifest), {
+    headers: { 'Content-Type': 'application/json', ...corsHeaders }
+  });
+}
+
+async function handleScreeningFrame(frameIndex: number, env: Env): Promise<Response> {
+  const state = await getScreeningState(env.CLUBHOUSE_KV);
+  if (!state?.active || !state.manifestId) {
+    return new Response(JSON.stringify({ error: 'No active screening' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+  
+  const key = `${SCREENING_FRAMES_PREFIX}${state.manifestId}/${frameIndex}.jpg`;
+  const object = await env.CLUBHOUSE_DOCS.get(key);
+  
+  if (!object) {
+    return new Response(JSON.stringify({ error: 'Frame not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+  
+  // Mark frame as viewed
+  if (!state.viewedFrames.includes(frameIndex)) {
+    state.viewedFrames.push(frameIndex);
+    state.lastAccessed = Date.now();
+    await env.CLUBHOUSE_KV.put(SCREENING_STATE_KEY, JSON.stringify(state));
+  }
+  
+  return new Response(await object.arrayBuffer(), {
+    headers: {
+      'Content-Type': 'image/jpeg',
+      'X-Frame-Time': object.customMetadata?.timeFormatted || '',
+      ...corsHeaders
+    }
+  });
+}
+
+async function handleScreeningLevel(levelName: string, limit: number, env: Env): Promise<Response> {
+  const manifest = await getScreeningManifest(env.CLUBHOUSE_KV);
+  const state = await getScreeningState(env.CLUBHOUSE_KV);
+  
+  if (!manifest || !state?.active) {
+    return new Response(JSON.stringify({ error: 'No active screening' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+  
+  const level = manifest.hierarchy.find(l => l.name.toLowerCase() === levelName.toLowerCase());
+  if (!level) {
+    return new Response(JSON.stringify({ error: 'Level not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+  
+  const frames: Array<{ index: number; time: string; image: string }> = [];
+  const frameIndices = level.frames.slice(0, limit);
+  
+  for (const index of frameIndices) {
+    const key = `${SCREENING_FRAMES_PREFIX}${state.manifestId}/${index}.jpg`;
+    const object = await env.CLUBHOUSE_DOCS.get(key);
+    
+    if (object) {
+      const buffer = await object.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      frames.push({
+        index,
+        time: object.customMetadata?.timeFormatted || '',
+        image: `data:image/jpeg;base64,${base64}`
+      });
+    }
+  }
+  
+  // Update current level
+  state.currentLevel = levelName;
+  state.lastAccessed = Date.now();
+  await env.CLUBHOUSE_KV.put(SCREENING_STATE_KEY, JSON.stringify(state));
+  
+  return new Response(JSON.stringify({ frames, total: level.frameCount }), {
+    headers: { 'Content-Type': 'application/json', ...corsHeaders }
+  });
+}
+
+async function handleScreeningEnd(env: Env): Promise<Response> {
+  const state = await getScreeningState(env.CLUBHOUSE_KV);
+  if (state?.manifestId) {
+    // Delete frames from R2
+    const prefix = `${SCREENING_FRAMES_PREFIX}${state.manifestId}/`;
+    const listed = await env.CLUBHOUSE_DOCS.list({ prefix });
+    for (const obj of listed.objects) {
+      await env.CLUBHOUSE_DOCS.delete(obj.key);
+    }
+  }
+  
+  // Clear state and manifest
+  await env.CLUBHOUSE_KV.delete(SCREENING_STATE_KEY);
+  await env.CLUBHOUSE_KV.delete(SCREENING_MANIFEST_KEY);
+  
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { 'Content-Type': 'application/json', ...corsHeaders }
+  });
+}
+
 async function handleSpeak(request: Request, env: Env): Promise<Response> {
   try {
     const { text, agentId } = await request.json() as { text: string; agentId: string };
@@ -2943,6 +3233,34 @@ export default {
       return handleTemporalStatus(env);
     }
 
+    // Screening Room endpoints
+    if (path === '/api/screening/upload' && method === 'POST') {
+      return handleScreeningUpload(request, env);
+    }
+
+    if (path === '/api/screening/status' && method === 'GET') {
+      return handleScreeningStatus(env);
+    }
+
+    if (path === '/api/screening/manifest' && method === 'GET') {
+      return handleScreeningManifest(env);
+    }
+
+    if (path.startsWith('/api/screening/frame/') && method === 'GET') {
+      const frameIndex = parseInt(path.split('/').pop() || '0');
+      return handleScreeningFrame(frameIndex, env);
+    }
+
+    if (path.startsWith('/api/screening/level/') && method === 'GET') {
+      const levelName = path.split('/').pop() || 'Arc';
+      const limit = parseInt(url.searchParams.get('limit') || '10');
+      return handleScreeningLevel(levelName, limit, env);
+    }
+
+    if (path === '/api/screening/end' && method === 'POST') {
+      return handleScreeningEnd(env);
+    }
+
     // Login page
     if (path === '/login') {
       return new Response(LOGIN_HTML, {
@@ -3357,6 +3675,16 @@ ${contextMessage}`;
             const breathField = formatBreathContext(agent.id, globalPhase, breathCycle);
             contextMessage = breathField + '\n' + contextMessage;
           }
+          
+          // Inject screening room context if active
+          const screeningState = await getScreeningState(env.CLUBHOUSE_KV);
+          if (screeningState?.active) {
+            const screeningManifest = await getScreeningManifest(env.CLUBHOUSE_KV);
+            if (screeningManifest) {
+              const screeningContext = generateScreeningContext(screeningManifest, screeningState);
+              contextMessage = screeningContext + '\n' + contextMessage;
+            }
+          }
         }
         
         // Inject working memory scratchpad (universal - all agents get session continuity)
@@ -3617,6 +3945,16 @@ ${contextMessage}`;
           const breathCycle = calculateBreathCycle(temporalState);
           const breathField = formatBreathContext(agent.id, globalPhase, breathCycle);
           context = breathField + '\n' + context;
+        }
+        
+        // Inject screening room context if active
+        const screeningState = await getScreeningState(env.CLUBHOUSE_KV);
+        if (screeningState?.active) {
+          const screeningManifest = await getScreeningManifest(env.CLUBHOUSE_KV);
+          if (screeningManifest) {
+            const screeningContext = generateScreeningContext(screeningManifest, screeningState);
+            context = screeningContext + '\n' + context;
+          }
         }
         
         // Add vote context if active (works in both normal and chamber mode)
