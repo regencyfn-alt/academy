@@ -1087,8 +1087,8 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       
       <!-- Shared Library Section -->
       <div class="form-section">
-        <h3>📚 Shared Library</h3>
-        <p style="font-size: 0.75em; color: var(--silver); margin-bottom: 10px;">Documents & images visible to all agents</p>
+        <h3>📚 Shared Library <span id="shared-cold-count" style="font-size: 0.7em; color: var(--silver);"></span></h3>
+        <p style="font-size: 0.75em; color: var(--silver); margin-bottom: 10px;">Documents & images visible to all agents (keeps 15, rest in cold storage)</p>
         <div id="shared-archives-list"><div class="empty" style="padding: 20px;">No shared documents</div></div>
         <div class="file-upload" id="shared-upload-zone">
           <div class="rune">ᛟ</div>
@@ -2491,6 +2491,11 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       fetch(API + '/shared/documents', { credentials: 'same-origin' })
         .then(function(res) { return res.json(); })
         .then(function(data) {
+          // Update cold storage count
+          var coldCount = document.getElementById('shared-cold-count');
+          if (coldCount && data.coldCount !== undefined) {
+            coldCount.textContent = data.coldCount > 0 ? '(+' + data.coldCount + ' in cold storage)' : '';
+          }
           if (data.documents && data.documents.length > 0) {
             document.getElementById('shared-archives-list').innerHTML = data.documents.map(function(doc) {
               return '<div class="doc-list-item"><span onclick="viewSharedDoc(\\''+doc+'\\')">' + doc + '</span><button class="btn btn-secondary" onclick="deleteSharedDoc(\\''+doc+'\\')">Remove</button></div>';
