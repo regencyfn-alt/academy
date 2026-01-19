@@ -1769,14 +1769,14 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       
       input.value = ''; 
       
-      var payload = { message: message };
+      var payload = { message: message, mode: activeMode };
       if (image) payload.image = image.data;
       
       clearSanctumImage();
       clearSanctumText();
       
       fetch(API + '/campfire/shane', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), credentials: 'same-origin' })
-        .then(function() { loadSanctum(); })
+        .then(function() { loadSanctum(); if (activeMode === 'crucible') loadCrucibleContent(); if (activeMode === 'workshop') loadWorkshopContent(); })
         .catch(function() { showStatus('sanctum-status', 'Voice did not reach the council', 'error'); }); 
     }
     function summonAgent(agent) { 
