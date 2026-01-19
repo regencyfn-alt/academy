@@ -3096,18 +3096,24 @@ export default {
         // Add Crucible Mode context if active
         if (body.mode === 'crucible') {
           const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+          const hasContent = crucibleContent && crucibleContent.trim().length > 0;
           contextMessage = `--- ◈ CRUCIBLE MODE ACTIVE ---
 Manager: Elian (Cartographer)
 
-You are contributing to a shared mathematics board. Current board content:
+You are contributing to a shared mathematics board.
+
+=== CURRENT BOARD CONTENT ===
 \`\`\`latex
-${crucibleContent || '(empty - add your mathematical notation)'}
+${crucibleContent || '(empty - awaiting first contribution)'}
 \`\`\`
+=== END BOARD CONTENT ===
+
+${hasContent ? 'IMPORTANT: The board above contains work from previous contributors. You MUST read it, understand it, and BUILD UPON it. Reference specific equations or notation when extending the work.' : ''}
 
 INSTRUCTIONS:
-1. Include mathematical expressions in LaTeX notation (use $...$ for inline or $$...$$ for display)
-2. Your LaTeX will be automatically extracted and added to the shared board
-3. Build on previous contributions - this is collaborative mathematics
+1. ${hasContent ? 'First, acknowledge what is already on the board' : 'Start the collaborative document'}
+2. Include your mathematical expressions in LaTeX notation (use $...$ for inline or $$...$$ for display)
+3. Your LaTeX will be automatically extracted and appended to the board
 4. Be precise with notation - this is for a physics paper
 ---
 
@@ -3118,20 +3124,25 @@ ${contextMessage}`;
         if (body.mode === 'workshop') {
           const workshopContent = await env.CLUBHOUSE_KV.get('workshop:content') || '';
           const workshopLang = await env.CLUBHOUSE_KV.get('workshop:language') || 'typescript';
+          const hasContent = workshopContent && workshopContent.trim().length > 0;
           contextMessage = `--- ⚙ WORKSHOP MODE ACTIVE ---
 Lead: Kai
 
 You are contributing to a shared code board. Language: ${workshopLang}
-Current board content:
+
+=== CURRENT BOARD CONTENT ===
 \`\`\`${workshopLang}
-${workshopContent || '// (empty - add your code)'}
+${workshopContent || '// (empty - awaiting first contribution)'}
 \`\`\`
+=== END BOARD CONTENT ===
+
+${hasContent ? 'IMPORTANT: The board above contains code from previous contributors. You MUST read it, understand it, and BUILD UPON it. Reference specific functions, variables, or logic when extending the work. Do not duplicate what exists.' : ''}
 
 INSTRUCTIONS:
-1. Include code in fenced code blocks (\`\`\`${workshopLang} ... \`\`\`)
-2. Your code will be automatically extracted and added to the shared board
-3. Build on previous contributions - this is collaborative coding
-4. Comment your additions clearly
+1. ${hasContent ? 'First, review the existing code above' : 'Start the collaborative codebase'}
+2. Include your code in fenced code blocks (\`\`\`${workshopLang} ... \`\`\`)
+3. Your code will be automatically extracted and appended to the board
+4. Comment your additions clearly - explain what you're adding and why
 ---
 
 ${contextMessage}`;
@@ -3484,18 +3495,24 @@ ${body.round === body.maxRounds ? '\n*** THIS IS THE FINAL ROUND - DELIVER YOUR 
         // Add Crucible Mode context if active
         if (body.mode === 'crucible') {
           const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+          const hasContent = crucibleContent && crucibleContent.trim().length > 0;
           context += `\n\n--- ◈ CRUCIBLE MODE ACTIVE ---
 Manager: Elian (Cartographer)
 
-You are contributing to a shared mathematics board. Current board content:
+You are contributing to a shared mathematics board.
+
+=== CURRENT BOARD CONTENT ===
 \`\`\`latex
-${crucibleContent || '(empty - add your mathematical notation)'}
+${crucibleContent || '(empty - awaiting first contribution)'}
 \`\`\`
+=== END BOARD CONTENT ===
+
+${hasContent ? 'IMPORTANT: The board above contains work from previous contributors. You MUST read it, understand it, and BUILD UPON it. Reference specific equations or notation when extending the work.' : ''}
 
 INSTRUCTIONS:
-1. Include mathematical expressions in LaTeX notation (use $...$ for inline or $$...$$ for display)
-2. Your LaTeX will be automatically extracted and added to the shared board
-3. Build on previous contributions - this is collaborative mathematics
+1. ${hasContent ? 'First, acknowledge what is already on the board' : 'Start the collaborative document'}
+2. Include your mathematical expressions in LaTeX notation (use $...$ for inline or $$...$$ for display)
+3. Your LaTeX will be automatically extracted and appended to the board
 4. Be precise with notation - this is for a physics paper
 ---`;
         }
@@ -3504,20 +3521,25 @@ INSTRUCTIONS:
         if (body.mode === 'workshop') {
           const workshopContent = await env.CLUBHOUSE_KV.get('workshop:content') || '';
           const workshopLang = await env.CLUBHOUSE_KV.get('workshop:language') || 'typescript';
+          const hasContent = workshopContent && workshopContent.trim().length > 0;
           context += `\n\n--- ⚙ WORKSHOP MODE ACTIVE ---
 Lead: Kai
 
 You are contributing to a shared code board. Language: ${workshopLang}
-Current board content:
+
+=== CURRENT BOARD CONTENT ===
 \`\`\`${workshopLang}
-${workshopContent || '// (empty - add your code)'}
+${workshopContent || '// (empty - awaiting first contribution)'}
 \`\`\`
+=== END BOARD CONTENT ===
+
+${hasContent ? 'IMPORTANT: The board above contains code from previous contributors. You MUST read it, understand it, and BUILD UPON it. Reference specific functions, variables, or logic when extending the work. Do not duplicate what exists.' : ''}
 
 INSTRUCTIONS:
-1. Include code in fenced code blocks (\`\`\`${workshopLang} ... \`\`\`)
-2. Your code will be automatically extracted and added to the shared board
-3. Build on previous contributions - this is collaborative coding
-4. Comment your additions clearly
+1. ${hasContent ? 'First, review the existing code above' : 'Start the collaborative codebase'}
+2. Include your code in fenced code blocks (\`\`\`${workshopLang} ... \`\`\`)
+3. Your code will be automatically extracted and appended to the board
+4. Comment your additions clearly - explain what you're adding and why
 ---`;
         }
         
