@@ -709,8 +709,9 @@ export const UI_HTML = `<!DOCTYPE html>
       <!-- Image Library (Thumbnails Only) -->
       <div class="image-library">
         <div class="image-library-header">
-          <span class="the-eight-label"><span class="rune">◈</span> Library</span>
+          <span class="the-eight-label"><span class="rune">◈</span> Library <span id="library-count" style="font-size: 0.8em; color: var(--silver);"></span></span>
           <div class="library-controls">
+            <button class="btn btn-secondary" onclick="cleanupLibrary()" style="font-size: 0.65em; padding: 4px 10px;" title="Move old images to cold storage">Cleanup</button>
             <button class="btn btn-secondary" onclick="document.getElementById('library-upload').click()" style="font-size: 0.65em; padding: 4px 10px;">Upload</button>
             <input type="file" id="library-upload" accept="image/png,image/jpeg,image/webp,application/pdf" style="display:none;" onchange="uploadLibraryImage(this)">
           </div>
@@ -1590,6 +1591,15 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       fetch(API + '/library/images', { credentials: 'same-origin' })
         .then(function(res) { return res.json(); })
         .then(function(data) {
+          // Update count display
+          var countEl = document.getElementById('library-count');
+          if (countEl && data.total !== undefined) {
+            var countText = '(' + data.images.length;
+            if (data.coldCount > 0) countText += ' +' + data.coldCount + ' cold';
+            countText += ')';
+            countEl.textContent = countText;
+          }
+          
           var thumbs = document.getElementById('image-thumbs');
           if (!data.images || data.images.length === 0) {
             thumbs.innerHTML = '<div class="empty" style="padding: 20px; font-size: 0.75em;">No images yet</div>';
@@ -1609,6 +1619,21 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         .catch(function() { 
           document.getElementById('image-thumbs').innerHTML = '<div class="empty" style="padding: 20px; font-size: 0.75em;">Failed to load</div>'; 
         });
+    }
+    
+    function cleanupLibrary() {
+      if (!confirm('Move old images to cold storage? Only the 30 most recent will remain visible.')) return;
+      fetch(API + '/library/cleanup', { method: 'POST', credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.success) {
+            showStatus('sanctum-status', 'Moved ' + data.moved + ' images to cold storage', 'success');
+            loadImageLibrary();
+          } else {
+            showStatus('sanctum-status', data.message || 'Cleanup failed', 'error');
+          }
+        })
+        .catch(function() { showStatus('sanctum-status', 'Cleanup failed', 'error'); });
     }
     
     function selectLibraryImage(name, url, isPdf) {
@@ -1714,15 +1739,20 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         method: 'DELETE',
         credentials: 'same-origin'
       })
-      .then(function() {
-        if (currentLibraryImage && currentLibraryImage.name === name) {
-          currentLibraryImage = null;
-          document.getElementById('image-preview-panel').innerHTML = '<div class="empty" style="padding: 40px; font-size: 0.75em;">Select an image</div>';
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          if (currentLibraryImage && currentLibraryImage.name === name) {
+            currentLibraryImage = null;
+            document.getElementById('image-preview-panel').innerHTML = '<div class="empty" style="padding: 40px; font-size: 0.75em;">Select an image</div>';
+          }
+          loadImageLibrary();
+          showStatus('sanctum-status', 'Deleted: ' + name, 'success');
+        } else {
+          showStatus('sanctum-status', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
         }
-        loadImageLibrary();
-        showStatus('sanctum-status', 'Image deleted', 'success');
       })
-      .catch(function() { showStatus('sanctum-status', 'Delete failed', 'error'); });
+      .catch(function(err) { showStatus('sanctum-status', 'Delete failed: ' + err.message, 'error'); });
     }
     
     function renderSanctumMessages(messages) { 
