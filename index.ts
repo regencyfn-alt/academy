@@ -4090,11 +4090,21 @@ INSTRUCTIONS:
       // SHARED ARCHIVES (All agents see these)
       // ============================================
 
-      // GET /shared/documents - list shared documents
+      // GET /shared/documents - list shared documents (most recent 15, rest in cold storage)
       if (path === '/shared/documents' && method === 'GET') {
         const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'shared/' });
-        const documents = list.objects.map(obj => obj.key.replace('shared/', ''));
-        return jsonResponse({ documents });
+        
+        // Sort by uploaded time (newest first) - R2 objects have uploaded property
+        const sorted = list.objects.sort((a, b) => 
+          new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime()
+        );
+        
+        // Return only the 15 most recent
+        const recent = sorted.slice(0, 15);
+        const documents = recent.map(obj => obj.key.replace('shared/', ''));
+        const coldCount = Math.max(0, sorted.length - 15);
+        
+        return jsonResponse({ documents, coldCount });
       }
 
       // POST /shared/documents - add shared document
@@ -4107,13 +4117,38 @@ INSTRUCTIONS:
           if (file) {
             const content = await file.text();
             await env.CLUBHOUSE_DOCS.put(`shared/${file.name}`, content);
-            return jsonResponse({ success: true, filename: file.name });
+          } else {
+            return jsonResponse({ error: 'No file provided' }, 400);
           }
-          return jsonResponse({ error: 'No file provided' }, 400);
+        } else {
+          const body = await request.json() as { filename: string; content: string };
+          await env.CLUBHOUSE_DOCS.put(`shared/${body.filename}`, body.content);
         }
         
-        const body = await request.json() as { filename: string; content: string };
-        await env.CLUBHOUSE_DOCS.put(`shared/${body.filename}`, body.content);
+        // Cleanup: keep only 15, move rest to cold storage
+        const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'shared/' });
+        if (list.objects.length > 15) {
+          const sorted = list.objects.sort((a, b) => 
+            new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime()
+          );
+          const toArchive = sorted.slice(15);
+          
+          for (const obj of toArchive) {
+            try {
+              const data = await env.CLUBHOUSE_DOCS.get(obj.key);
+              if (data) {
+                const content = await data.text();
+                const coldKey = obj.key.replace('shared/', 'cold-storage/shared/');
+                await env.CLUBHOUSE_DOCS.put(coldKey, content);
+                await env.CLUBHOUSE_DOCS.delete(obj.key);
+              }
+            } catch (e) {
+              // If cold storage fails, just delete to prevent bloat
+              await env.CLUBHOUSE_DOCS.delete(obj.key);
+            }
+          }
+        }
+        
         return jsonResponse({ success: true });
       }
 
@@ -4131,6 +4166,39 @@ INSTRUCTIONS:
         const filename = decodeURIComponent(sharedDocMatch[1]);
         await env.CLUBHOUSE_DOCS.delete(`shared/${filename}`);
         return jsonResponse({ success: true });
+      }
+
+      // POST /shared/documents/cleanup - one-time migration to move excess to cold storage
+      if (path === '/shared/documents/cleanup' && method === 'POST') {
+        const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'shared/' });
+        const sorted = list.objects.sort((a, b) => 
+          new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime()
+        );
+        
+        if (sorted.length <= 15) {
+          return jsonResponse({ success: true, moved: 0, message: 'Already clean' });
+        }
+        
+        const toArchive = sorted.slice(15);
+        let moved = 0;
+        
+        for (const obj of toArchive) {
+          try {
+            const data = await env.CLUBHOUSE_DOCS.get(obj.key);
+            if (data) {
+              const content = await data.text();
+              const coldKey = obj.key.replace('shared/', 'cold-storage/shared/');
+              await env.CLUBHOUSE_DOCS.put(coldKey, content);
+              await env.CLUBHOUSE_DOCS.delete(obj.key);
+              moved++;
+            }
+          } catch (e) {
+            await env.CLUBHOUSE_DOCS.delete(obj.key);
+            moved++;
+          }
+        }
+        
+        return jsonResponse({ success: true, moved, remaining: 15 });
       }
 
       // Document routes
