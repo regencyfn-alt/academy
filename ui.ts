@@ -558,6 +558,34 @@ export const UI_HTML = `<!DOCTYPE html>
     .control-btn.disabled { background: rgba(107, 114, 128, 0.2); color: #6b7280; }
     .control-btn.logout { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
     .control-btn:hover { transform: scale(1.05); }
+    
+    /* Temporal Resonance Widget */
+    .temporal-widget { position: fixed; bottom: 80px; right: 20px; background: rgba(10,10,12,0.95); border: 1px solid rgba(201,165,90,0.3); border-radius: 8px; padding: 10px 14px; font-family: 'Space Mono', monospace; font-size: 11px; color: #e8e4dc; z-index: 100; min-width: 160px; transition: all 0.3s; }
+    .temporal-widget.collapsed .tw-body { display: none; }
+    .temporal-widget.collapsed { min-width: auto; padding: 8px 12px; }
+    .tw-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; margin-bottom: 8px; }
+    .tw-title { color: #c9a55a; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+    .tw-indicator { font-size: 9px; padding: 2px 6px; background: rgba(255,255,255,0.05); border-radius: 3px; color: #666; }
+    .tw-indicator.active { background: rgba(16,185,129,0.2); color: #10b981; }
+    .tw-ring { width: 60px; height: 60px; margin: 8px auto; position: relative; }
+    .tw-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .tw-ring-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 3; }
+    .tw-ring-fill { fill: none; stroke: #c9a55a; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 163.36; stroke-dashoffset: 163.36; transition: stroke-dashoffset 0.1s; }
+    .tw-ring-fill.exhale { stroke: #10b981; }
+    .tw-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+    .tw-phase { font-size: 10px; color: #888; text-transform: capitalize; }
+    .tw-stats { display: flex; justify-content: space-around; margin: 10px 0; padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .tw-stat { text-align: center; }
+    .tw-stat span { display: block; font-size: 14px; color: #c9a55a; }
+    .tw-stat label { font-size: 8px; color: #555; text-transform: uppercase; }
+    .tw-agents { display: flex; justify-content: center; gap: 4px; margin: 8px 0; }
+    .tw-agent-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(201,165,90,0.3); transition: all 0.2s; }
+    .tw-agent-dot.resonant { background: #c9a55a; box-shadow: 0 0 6px rgba(201,165,90,0.5); }
+    .tw-agent-dot.anti { background: #10b981; }
+    .tw-controls { display: flex; gap: 6px; }
+    .tw-controls button { flex: 1; padding: 5px; background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #888; font-family: inherit; font-size: 9px; cursor: pointer; border-radius: 3px; }
+    .tw-controls button:hover { border-color: #c9a55a; color: #c9a55a; }
+    .tw-controls button.active { background: rgba(201,165,90,0.15); border-color: #c9a55a; color: #c9a55a; }
   </style>
 </head>
 <body>
@@ -571,6 +599,7 @@ export const UI_HTML = `<!DOCTYPE html>
       </div>
       <button id="vision-toggle" class="control-btn enabled" onclick="toggleVisionEnabled()">&#x1F441;</button>
       <button id="sound-toggle" class="control-btn disabled" onclick="toggleSoundEnabled()">&#x1F507;</button>
+      <button id="temporal-toggle" class="control-btn disabled" onclick="toggleTemporalEnabled()" title="Temporal Resonance">&#x1F300;</button>
       <button id="kill-voices-btn" class="control-btn" onclick="killVoices()" title="Stop all voices">&#x1F6D1;</button>
       <button class="control-btn logout" onclick="logout()">&#x23FB;</button>
     </div>
@@ -1135,6 +1164,35 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
 
   <div class="modal" id="convene-modal"><div class="modal-content"><h2>Convene the Council</h2><input type="text" id="convene-topic" placeholder="Topic of discourse..."><div class="modal-buttons"><button class="btn btn-secondary" onclick="hideConveneModal()">Withdraw</button><button class="btn btn-primary" onclick="createSanctum()">Convene</button></div></div></div>
   <div class="image-modal" id="image-modal" onclick="closeImageModal()"><img id="modal-image" src=""></div>
+  
+  <!-- Temporal Resonance Widget -->
+  <div id="temporal-widget" class="temporal-widget collapsed" style="display: none;">
+    <div class="tw-header" onclick="document.getElementById('temporal-widget').classList.toggle('collapsed')">
+      <span class="tw-title">◈ Breath</span>
+      <span class="tw-indicator" id="tw-indicator">OFF</span>
+    </div>
+    <div class="tw-body">
+      <div class="tw-ring">
+        <svg viewBox="0 0 60 60">
+          <circle class="tw-ring-bg" cx="30" cy="30" r="26" />
+          <circle class="tw-ring-fill" id="tw-ring-fill" cx="30" cy="30" r="26" />
+        </svg>
+        <div class="tw-center">
+          <div class="tw-phase" id="tw-phase">—</div>
+        </div>
+      </div>
+      <div class="tw-stats">
+        <div class="tw-stat"><span id="tw-harmony">—</span><label>Harmony</label></div>
+        <div class="tw-stat"><span id="tw-buffer">0</span><label>Buffered</label></div>
+      </div>
+      <div class="tw-agents" id="tw-agents"></div>
+      <div class="tw-controls">
+        <button onclick="toggleTemporalEnabled()" id="tw-toggle">Enable</button>
+        <button onclick="flushTemporalBuffer()">Flush</button>
+      </div>
+    </div>
+  </div>
+  
   <script>
     const API = window.location.origin;
     var currentCodexTab = 'shared';
@@ -1143,6 +1201,17 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     var currentAudio = null;
     var sessionAudioBlobs = [];  // Store audio blobs for download
     var isRecordingSession = false;
+    
+    // Temporal Resonance State
+    var temporalEnabled = false;
+    var temporalStartTime = Date.now();
+    var temporalAnimFrame = null;
+    var temporalMessageBuffer = [];
+    const TEMPORAL_BREATH_PERIOD = 6000;
+    const TEMPORAL_CIRCUMFERENCE = 2 * Math.PI * 26;
+    const TEMPORAL_AGENTS = ['dream','kai','uriel','holinna','cartographer','chrysalis','seraphina','alba'];
+    const TEMPORAL_POSITIONS = {dream:1,kai:2,uriel:3,holinna:4,cartographer:5,chrysalis:6,seraphina:7,alba:8};
+    const TEMPORAL_ELEMENTS = {dream:1.2,kai:1.2,uriel:0.8,holinna:0.8,cartographer:1.1,chrysalis:1.1,seraphina:0.9,alba:0.9};
     
     // Emergency voice kill switch
     function killVoices() {
@@ -1156,7 +1225,189 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       showStatus('sanctum-status', 'Voices silenced', 'success');
     }
     
-    window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); });
+    // Initialize temporal agent dots
+    function initTemporalAgentDots() {
+      var agentsEl = document.getElementById('tw-agents');
+      if (agentsEl && agentsEl.children.length === 0) {
+        TEMPORAL_AGENTS.forEach(function(id) {
+          var dot = document.createElement('div');
+          dot.className = 'tw-agent-dot';
+          dot.dataset.agent = id;
+          dot.title = id;
+          agentsEl.appendChild(dot);
+        });
+      }
+    }
+    
+    function getTemporalGlobalPhase() {
+      var elapsed = Date.now() - temporalStartTime;
+      return ((elapsed % TEMPORAL_BREATH_PERIOD) / TEMPORAL_BREATH_PERIOD) * 2 * Math.PI;
+    }
+    
+    function getTemporalResonance(agentId) {
+      var pos = TEMPORAL_POSITIONS[agentId] || 4;
+      var freq = TEMPORAL_ELEMENTS[agentId] || 1.0;
+      var globalPhase = getTemporalGlobalPhase();
+      var basePhase = ((pos - 1) / 8) * 2 * Math.PI;
+      var agentPhase = basePhase + (freq - 1.0) * globalPhase;
+      return Math.cos(agentPhase - globalPhase);
+    }
+    
+    function animateTemporal() {
+      if (!temporalEnabled) return;
+      
+      var globalPhase = getTemporalGlobalPhase();
+      var progress = globalPhase / (2 * Math.PI);
+      
+      // Update ring
+      var ringFill = document.getElementById('tw-ring-fill');
+      if (ringFill) {
+        var offset = TEMPORAL_CIRCUMFERENCE * (1 - progress);
+        ringFill.style.strokeDashoffset = offset;
+        if (progress > 0.4 && progress < 0.9) {
+          ringFill.classList.add('exhale');
+        } else {
+          ringFill.classList.remove('exhale');
+        }
+      }
+      
+      // Update phase label
+      var phaseEl = document.getElementById('tw-phase');
+      if (phaseEl) {
+        if (progress < 0.4) phaseEl.textContent = 'inhale';
+        else if (progress < 0.5) phaseEl.textContent = 'pause';
+        else if (progress < 0.9) phaseEl.textContent = 'exhale';
+        else phaseEl.textContent = 'pause';
+      }
+      
+      // Update harmony
+      var harmony = 0;
+      TEMPORAL_AGENTS.forEach(function(id) { harmony += getTemporalResonance(id); });
+      var normHarmony = ((harmony + 8) / 16 * 100).toFixed(0);
+      var harmonyEl = document.getElementById('tw-harmony');
+      if (harmonyEl) harmonyEl.textContent = normHarmony + '%';
+      
+      // Update agent dots
+      TEMPORAL_AGENTS.forEach(function(id) {
+        var dot = document.querySelector('[data-agent="' + id + '"]');
+        if (!dot) return;
+        var res = getTemporalResonance(id);
+        dot.classList.remove('resonant', 'anti');
+        if (res > 0.5) dot.classList.add('resonant');
+        else if (res < -0.5) dot.classList.add('anti');
+      });
+      
+      // Update buffer count
+      var bufferEl = document.getElementById('tw-buffer');
+      if (bufferEl) bufferEl.textContent = temporalMessageBuffer.length;
+      
+      // Release ready messages
+      releaseTemporalMessages();
+      
+      temporalAnimFrame = requestAnimationFrame(animateTemporal);
+    }
+    
+    function releaseTemporalMessages() {
+      var now = Date.now();
+      while (temporalMessageBuffer.length > 0 && temporalMessageBuffer[0].releaseAt <= now) {
+        var msg = temporalMessageBuffer.shift();
+        if (window.temporalOnRelease) {
+          window.temporalOnRelease(msg);
+        }
+      }
+    }
+    
+    function toggleTemporalEnabled() {
+      fetch(API + '/api/temporal/toggle', { method: 'POST', credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          temporalEnabled = data.enabled;
+          if (data.startTime) temporalStartTime = data.startTime;
+          
+          var btn = document.getElementById('temporal-toggle');
+          var twBtn = document.getElementById('tw-toggle');
+          var indicator = document.getElementById('tw-indicator');
+          var widget = document.getElementById('temporal-widget');
+          
+          btn.className = 'control-btn ' + (temporalEnabled ? 'enabled' : 'disabled');
+          
+          if (temporalEnabled) {
+            widget.style.display = 'block';
+            twBtn.classList.add('active');
+            twBtn.textContent = 'Disable';
+            indicator.classList.add('active');
+            indicator.textContent = 'ON';
+            initTemporalAgentDots();
+            temporalAnimFrame = requestAnimationFrame(animateTemporal);
+          } else {
+            widget.style.display = 'none';
+            twBtn.classList.remove('active');
+            twBtn.textContent = 'Enable';
+            indicator.classList.remove('active');
+            indicator.textContent = 'OFF';
+            if (temporalAnimFrame) cancelAnimationFrame(temporalAnimFrame);
+            flushTemporalBuffer();
+          }
+        });
+    }
+    
+    function flushTemporalBuffer() {
+      while (temporalMessageBuffer.length > 0) {
+        var msg = temporalMessageBuffer.shift();
+        if (window.temporalOnRelease) {
+          window.temporalOnRelease(msg);
+        }
+      }
+    }
+    
+    function queueTemporalMessage(agentId, content, voiceUrl) {
+      if (!temporalEnabled) {
+        if (window.temporalOnRelease) {
+          window.temporalOnRelease({ agentId: agentId, content: content, voiceUrl: voiceUrl, immediate: true });
+        }
+        return;
+      }
+      
+      var res = Math.abs(getTemporalResonance(agentId));
+      var delayFactor = 1 - res;
+      var delay = 500 + delayFactor * 3500;
+      
+      temporalMessageBuffer.push({
+        agentId: agentId,
+        content: content,
+        voiceUrl: voiceUrl,
+        createdAt: Date.now(),
+        releaseAt: Date.now() + delay
+      });
+      
+      temporalMessageBuffer.sort(function(a, b) { return a.releaseAt - b.releaseAt; });
+    }
+    
+    function checkTemporalStatus() {
+      fetch(API + '/api/temporal/status', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          temporalEnabled = data.enabled;
+          if (data.startTime) temporalStartTime = data.startTime;
+          
+          var btn = document.getElementById('temporal-toggle');
+          var widget = document.getElementById('temporal-widget');
+          btn.className = 'control-btn ' + (temporalEnabled ? 'enabled' : 'disabled');
+          
+          if (temporalEnabled) {
+            widget.style.display = 'block';
+            document.getElementById('tw-indicator').classList.add('active');
+            document.getElementById('tw-indicator').textContent = 'ON';
+            document.getElementById('tw-toggle').classList.add('active');
+            document.getElementById('tw-toggle').textContent = 'Disable';
+            initTemporalAgentDots();
+            temporalAnimFrame = requestAnimationFrame(animateTemporal);
+          }
+        })
+        .catch(function() {});
+    }
+    
+    window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); checkTemporalStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); });
     function logout() { fetch('/logout', { method: 'POST', credentials: 'same-origin' }).then(function() { window.location.href = '/login'; }); }
     
     function toggleSoundEnabled() {
