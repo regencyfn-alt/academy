@@ -4015,25 +4015,34 @@ INSTRUCTIONS:
         return jsonResponse({ success: true, filename: body.filename });
       }
 
-      // GET /library/images - list all library images
+      // GET /library/images - list library images (most recent 30)
       if (path === '/library/images' && method === 'GET') {
         const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'library/' });
-        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
-        const images = list.objects
+        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'];
+        
+        // Filter to images/PDFs and sort by upload date (newest first)
+        const allImages = list.objects
           .filter(obj => {
             const name = obj.key.toLowerCase();
             return imageExtensions.some(ext => name.endsWith(ext));
           })
-          .map(obj => {
-            const name = obj.key.replace('library/', '');
-            return {
-              name,
-              url: `/library/images/${encodeURIComponent(name)}`,
-              size: obj.size,
-              uploaded: obj.uploaded
-            };
-          });
-        return jsonResponse({ images });
+          .sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
+        
+        // Return only most recent 30, with count of how many more exist
+        const recentImages = allImages.slice(0, 30);
+        const coldCount = Math.max(0, allImages.length - 30);
+        
+        const images = recentImages.map(obj => {
+          const name = obj.key.replace('library/', '');
+          return {
+            name,
+            url: `/library/images/${encodeURIComponent(name)}`,
+            size: obj.size,
+            uploaded: obj.uploaded
+          };
+        });
+        
+        return jsonResponse({ images, total: allImages.length, coldCount });
       }
 
       // GET /library/images/:filename - get single image
@@ -4051,6 +4060,59 @@ INSTRUCTIONS:
             ...corsHeaders
           }
         });
+      }
+
+      // DELETE /library/images/:filename - delete image
+      if (libraryImageMatch && method === 'DELETE') {
+        const filename = decodeURIComponent(libraryImageMatch[1]);
+        try {
+          // Check if exists first
+          const obj = await env.CLUBHOUSE_DOCS.head(`library/${filename}`);
+          if (!obj) {
+            return jsonResponse({ error: 'Image not found', filename }, 404);
+          }
+          await env.CLUBHOUSE_DOCS.delete(`library/${filename}`);
+          return jsonResponse({ success: true, deleted: filename });
+        } catch (e: any) {
+          return jsonResponse({ error: 'Delete failed', message: e.message, filename }, 500);
+        }
+      }
+
+      // POST /library/cleanup - move old images to cold storage (keep 30)
+      if (path === '/library/cleanup' && method === 'POST') {
+        const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'library/' });
+        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf'];
+        
+        const allImages = list.objects
+          .filter(obj => imageExtensions.some(ext => obj.key.toLowerCase().endsWith(ext)))
+          .sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
+        
+        if (allImages.length <= 30) {
+          return jsonResponse({ success: true, moved: 0, message: 'Library already clean' });
+        }
+        
+        const toArchive = allImages.slice(30);
+        let moved = 0;
+        
+        for (const obj of toArchive) {
+          try {
+            const data = await env.CLUBHOUSE_DOCS.get(obj.key);
+            if (data) {
+              const coldKey = obj.key.replace('library/', 'cold-storage/library/');
+              await env.CLUBHOUSE_DOCS.put(coldKey, data.body, {
+                httpMetadata: data.httpMetadata
+              });
+              await env.CLUBHOUSE_DOCS.delete(obj.key);
+              moved++;
+            }
+          } catch (e) {
+            // If move fails, just delete to prevent bloat
+            await env.CLUBHOUSE_DOCS.delete(obj.key);
+            moved++;
+          }
+        }
+        
+        return jsonResponse({ success: true, moved, remaining: 30 });
       }
 
       // POST /library/images - upload image
@@ -4099,13 +4161,6 @@ INSTRUCTIONS:
         });
         
         return jsonResponse({ success: true, filename });
-      }
-
-      // DELETE /library/images/:filename - delete image
-      if (libraryImageMatch && method === 'DELETE') {
-        const filename = decodeURIComponent(libraryImageMatch[1]);
-        await env.CLUBHOUSE_DOCS.delete(`library/${filename}`);
-        return jsonResponse({ success: true });
       }
 
       // ============================================
