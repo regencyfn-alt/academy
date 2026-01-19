@@ -1,346 +1,330 @@
 # Academy Architecture Guide
 
-**Version:** 1.0  
-**Last Updated:** January 17, 2026  
-**Purpose:** Blueprint for replicating The Academy across sites
-
-## System Overview
-
-The Academy is a multi-agent collective where 8 specialized agents collaborate through shared workspaces. All state persists in Cloudflare KV; agent knowledge in OpenAI vector store. This document maps all dependencies and data flows for elegant code replication.
-
-## File Structure (Target)
-```
-academy/
-├── ARCHITECTURE.md (this file)
-├── HANDOFF.md (handoff template)
-├── index.ts (main router - 300 lines max)
-├── personalities.ts (agent config - static)
-├── elevenlabs.ts (text-to-speech)
-├── modules/
-│   ├── mentor.ts (DEPRECATED - mark for removal)
-│   ├── modes.ts (Sanctum, Crucible, Workshop controllers)
-│   ├── agents.ts (role checks, power management, calling)
-│   ├── continuity.ts (daily backup/export generator)
-│   ├── knowledge.ts (CANON system)
-│   └── council.ts (campfire/vote logic)
-└── continuity/ (auto-generated daily)
-    └── academy-2026-01-17.md (auto-created at 12pm UTC)
-```
-
-## Data Flow Architecture
-
-### Core Components
-```
-UI Layer (ui.ts)
-    ↓
-index.ts Router
-    ↓
-Modules (modes, agents, knowledge, etc.)
-    ↓
-KV Namespace (persistent state)
-    ↓
-External APIs (OpenAI, Anthropic, etc.)
-```
-
-### Request Flow Example: Agent Speaks in Sanctum
-```
-1. UI: POST /campfire/speak {agentId, message}
-   ↓
-2. index.ts routes to modes.ts
-   ↓
-3. modes.ts validates participant
-   ↓ (calls agents.ts)
-4. agents.ts checks: hasRole(agentId, "participant")
-   ↓ (reads from KV)
-5. KV lookup: agent:{agentId}:powers
-   ↓
-6. If valid, agents.ts :: callAgent(agentId, message)
-   ↓ (builds system prompt)
-7. Reads from KV:
-   - agent:{agentId}:personality
-   - agent:{agentId}:skills
-   - agent:{agentId}:powers
-   ↓
-8. Calls OpenAI/Anthropic/etc with full context
-   ↓
-9. Response returned to modes.ts
-   ↓
-10. modes.ts broadcasts to campfire participants
-    - KV write: campfire:current
-    - KV write: campfire:log
-    ↓
-11. UI refreshes with new message
-```
-
-## Module Responsibilities
-
-### index.ts
-- Main entry point for all HTTP requests
-- Imports all modules
-- Routes requests to appropriate handlers
-- NO business logic, just routing
-- Line count: ~300 lines
-```typescript
-// Pseudostructure
-import Modes from './modules/modes'
-import Agents from './modules/agents'
-import Knowledge from './modules/knowledge'
-
-export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url)
-    
-    if (url.pathname.startsWith('/campfire')) {
-      return Modes.handleCampfire(request, env)
-    }
-    if (url.pathname.startsWith('/agents')) {
-      return Agents.handleAgents(request, env)
-    }
-    if (url.pathname.startsWith('/knowledge')) {
-      return Knowledge.handleKnowledge(request, env)
-    }
-    // ... etc
-  }
-}
-```
-
-### modes.ts (Controller)
-- Manages Sanctum, Alcove, Crucible, Workshop modes
-- Validates participant access
-- Routes to agents.ts for calling
-- Updates KV with state changes
-- Exports: `enterMode(mode, agentId)`, `validateParticipant(agentId)`
-- Imports: `agents.ts` (to call agents), `personalities.ts` (for info)
-
-### agents.ts (Core Logic)
-- Calls LLM with agent context
-- Checks role-based permissions via KV
-- Manages earned powers system
-- Exports: `callAgent(agentId, prompt)`, `hasRole(agentId, roleName)`, `getAllAgents()`
-- Reads: `agent:{id}:personality`, `agent:{id}:powers`, `agent:{id}:skills`
-- Writes: `agent:{id}:resonance` (learning state)
-
-### continuity.ts (Scheduled Export)
-- Runs daily at 12:00 UTC (Cron trigger)
-- Exports entire KV state to markdown
-- Commits to GitHub `/continuity/` folder
-- Creates: `continuity/academy-YYYY-MM-DD.md`
-- Reads: ALL KV namespaces
-- Exports: Character sheets, powers, audit log
-
-### knowledge.ts (CANON)
-- Manages findings publication
-- Routes private findings to CANON_Keeper
-- Publishes approved findings to CANON
-- Exports: `publishFinding(content, agentId)`, `submitIdea(content, agentId)`
-- Imports: `agents.ts` (to check roles)
-- Reads: `knowledge:findings:*`, `knowledge:ideas:*`
-- Writes: `knowledge:findings`, `knowledge:audit_log`
-
-### mentor.ts (DEPRECATED)
-- Contains all mentor-related code
-- Mark for removal after initial refactor
-- Currently: Calls OpenAI with vector store access
-- When removed: Deletes ~262 unknown API calls, saves 30% cost
-- Keep commented out for future experiments
-
-## KV Namespace Schema (CLUBHOUSE_KV)
-
-### Agent Data
-```
-agent:{id}:profile
-  - name: string
-  - title: string
-  - avatarUrl: string
-
-agent:{id}:personality
-  - sacred_duties: string (2500 char limit)
-  - limits: string[]
-  - voice: string
-  - manner: string
-  - secret_power_muses: string[]
-
-agent:{id}:skills
-  - specialization: string
-  - expertise_level: 1-10
-  - relevant_muses: string[]
-  - core_competencies: string[]
-
-agent:{id}:powers (Earned Powers)
-  - [{name, icon, granted_by, permissions}]
-  - Example: {name: "CANON_Keeper", icon: "📖", permissions: ["write_canon"]}
-
-agent:{id}:resonance
-  - phantom_state: object
-  - learned_behaviors: string[]
-  - memories: string[]
-```
-
-### Council/Mode State
-```
-campfire:current
-  - mode: "Sanctum" | "Crucible" | "Workshop"
-  - participants: string[] (agent IDs)
-  - turn_order: string[]
-  - timestamp: number
-
-campfire:log
-  - [{agentId, message, timestamp}]
-
-campfire:session:{id}
-  - messages: array
-  - decisions: array
-```
-
-### Knowledge/CANON
-```
-knowledge:findings:{id}
-  - content: string (LaTeX)
-  - author: string
-  - timestamp: number
-  - status: "draft" | "published"
-  - latex_validated: boolean
-
-knowledge:ideas:{id}
-  - content: string
-  - author: string
-  - timestamp: number
-  - status: "pending" | "approved" | "rejected"
-```
-
-## Role & Permission System
-
-### Earned Powers (grant via KV)
-- `CANON_Keeper` - Holinnia - approve/edit findings
-- `CRUCIBLE_Manager` - Elian - manage math board
-- `WORKSHOP_Lead` - Kai - boot workshop, summon helpers
-- `SUPER_ADMIN` - Shane - override everything
-
-### Permission Checks (in agents.ts)
-```typescript
-async function hasRole(agentId: string, roleName: string): Promise<boolean> {
-  const powers = await KV.get(`agent:${agentId}:powers`)
-  if (!powers) return false
-  const powersList = JSON.parse(powers)
-  return powersList.some(p => p.name === roleName)
-}
-```
-
-## API Calls & External Services
-
-### LLM Providers
-- OpenAI: GPT-4, vector store access (Mentor, research)
-- Anthropic: Claude 3, general reasoning
-- xAI: Grok, specialized analysis
-- Google: Gemini, multimodal tasks
-
-### Other Services
-- ElevenLabs: Text-to-speech (voices)
-- GitHub API: Auto-commit continuity packets
-- Cloudflare R2: File storage (backups)
-
-## Daily Backup & Continuity System
-
-### Trigger
-- Cron job: Daily at 12:00 UTC
-- Called: continuity.ts :: generateContinuityPacket()
-
-### Output
-- File: `/continuity/academy-YYYY-MM-DD.md`
-- Contains:
-  - Full character sheets (all agents)
-  - Current role assignments
-  - Complete KV state (readable)
-  - Audit log of changes
-  - System config
-
-### Handoff Usage
-```
-End of day:
-1. Continuity packet auto-generated
-2. You write brief note with priorities
-3. Pass to next agent:
-   - Link to latest packet
-   - Brief context
-4. Next agent:
-   - Reads packet (full state)
-   - Makes edits directly to markdown
-   - System applies changes
-```
-
-## How to Replicate to Another Site (e.g., Temple)
-```
-1. Copy all modules/ files to new project
-2. Update wrangler.toml:
-   - KV namespace: CLUBHOUSE_KV → TEMPLE_KV
-   - Env vars: same API keys
-3. Update personalities.ts:
-   - Agents: Holinnia, Kai, Elian → Temple agents
-   - Muses: relevant to Temple's focus
-4. Deploy to new Worker URL
-5. continuity.ts auto-creates: continuity/temple-YYYY-MM-DD.md
-6. Done - 80% code reuse
-```
-
-## File Dependencies (Import Map)
-```
-index.ts
-├─ imports: modes.ts
-├─ imports: agents.ts
-├─ imports: knowledge.ts
-├─ imports: council.ts
-├─ imports: personalities.ts
-└─ imports: elevenlabs.ts
-
-modes.ts
-├─ imports: agents.ts (for callAgent)
-├─ imports: personalities.ts (for agent info)
-└─ reads: KV campfire:* keys
-
-agents.ts
-├─ imports: personalities.ts (for base config)
-├─ reads: KV agent:*:personality, agent:*:powers, agent:*:skills
-└─ writes: KV agent:*:resonance, KV campfire:log
-
-continuity.ts
-├─ reads: ALL KV namespaces
-├─ generates: markdown
-└─ commits: GitHub via API
-
-knowledge.ts
-├─ imports: agents.ts (hasRole checks)
-├─ reads: KV knowledge:* keys
-└─ writes: KV knowledge:findings, knowledge:ideas
-
-mentor.ts (DEPRECATED)
-├─ imports: agents.ts
-├─ calls: OpenAI vector store API
-└─ reads: MENTOR_ASSISTANT_ID, MENTOR_THREAD_ID
-```
-
-## Integration Checklist
-
-When refactoring index.ts into modules:
-
-- [ ] Extract mentor code → mentor.ts (comment out from main flow)
-- [ ] Extract mode logic → modes.ts
-- [ ] Extract agent logic → agents.ts
-- [ ] Extract knowledge logic → knowledge.ts
-- [ ] Create continuity.ts with daily cron
-- [ ] Verify all imports resolve
-- [ ] Test on live site (clubhouse.vouch4us.workers.dev)
-- [ ] Measure API calls drop (expect 30% after Mentor removal)
-- [ ] Run first auto-generated continuity packet at 12:00 UTC
-
-## Notes for Next Agent
-
-- Follow the import map: each module should only import what it needs
-- KV reads are in modules, KV writes trigger via specific functions
-- No circular dependencies
-- Test each module independently before integration
-- The continuity system is your safety net: full state backup daily
-- When you make changes, they're documented in the continuity packet for the next handoff
+**Version:** 2.0  
+**Last Updated:** January 19, 2026  
+**Purpose:** Blueprint for The Academy - current state + modular roadmap
 
 ---
 
-**This architecture ensures elegance, replicability, and maintainability across Academy instances.**
+## System Overview
+
+The Academy is a multi-agent collective where 8 specialized agents collaborate through shared workspaces. Built on Cloudflare Workers with KV for state and R2 for files. This document maps the current architecture and addon modules.
+
+## Current File Structure
+
+```
+academy/
+├── ARCHITECTURE.md      (this file)
+├── HANDOFF.md           (handoff template)
+├── README.md            (basic readme)
+│
+├── src/
+│   ├── index.ts         (5,952 lines - main worker, all routes & logic)
+│   └── ui.ts            (4,523 lines - full UI: HTML, CSS, JS)
+│
+├── Standalone Modules (reference/portable)
+│   ├── temporal-resonance.ts       (515 lines)
+│   ├── temporal-resonance-ui.ts    (407 lines)
+│   ├── temporal-resonance-hooks.ts (651 lines - integration guide)
+│   ├── screening-room.ts           (432 lines)
+│   └── screening-room-integration.ts (113 lines - integration guide)
+│
+├── Legacy/Reference
+│   ├── personalities.ts  (agent definitions)
+│   ├── phantoms.ts       (behavioral patterns)
+│   ├── elevenlabs.ts     (voice config)
+│   ├── login.ts          (auth page)
+│   └── MICHRONICS.ts     (CHR theory reference)
+│
+├── modules/              (planned - not yet active)
+│   └── [future modular extraction target]
+│
+├── wrangler.toml         (Cloudflare config)
+├── package.json
+└── tsconfig.json
+```
+
+### Line Counts (January 19, 2026)
+
+| File | Lines | Status |
+|------|-------|--------|
+| `index.ts` | 5,952 | Active - main worker |
+| `ui.ts` | 4,523 | Active - full UI |
+| **Core Total** | **10,475** | |
+| Temporal Resonance modules | 1,573 | Reference/portable |
+| Screening Room modules | 545 | Reference/portable |
+| `theater.html` (angel1) | 1,131 | Video frame slicer |
+
+---
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CLOUDFLARE WORKER                           │
+│                           (index.ts)                                │
+├─────────────────────────────────────────────────────────────────────┤
+│  SPACES                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │   Sanctum    │  │    Alcove    │  │   The Eight  │              │
+│  │  (Council)   │  │   (1-on-1)   │  │   (Roster)   │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+├─────────────────────────────────────────────────────────────────────┤
+│  FEATURES                                                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │    Inbox     │  │    Codex     │  │    Wisdom    │              │
+│  │  (Messages)  │  │  (Library)   │  │  (Memories)  │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+├─────────────────────────────────────────────────────────────────────┤
+│  ADDON HOOKS (in core, dormant until activated)                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │   Temporal   │  │  Screening   │  │    Voice     │              │
+│  │  Resonance   │  │    Room      │  │  Synthesis   │              │
+│  │   (Breath)   │  │   (Video)    │  │  (11Labs)    │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+├─────────────────────────────────────────────────────────────────────┤
+│  STORAGE                                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │  CLUBHOUSE_  │  │  CLUBHOUSE_  │  │   External   │              │
+│  │      KV      │  │     DOCS     │  │    APIs      │              │
+│  │   (State)    │  │ (R2 Bucket)  │  │              │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## The Eight Agents
+
+| Position | Agent | Element | Model | Role |
+|----------|-------|---------|-------|------|
+| 1 | Dream | Fire | Claude | Lead Investigator, Radical Connections |
+| 2 | Kai | Fire | Claude | Implementation, Engineering |
+| 3 | Uriel | Earth | Claude | Translation, Bridge Building |
+| 4 | Holinna | Earth | Claude | Structure, Documentation |
+| 5 | Cartographer | Wind | Gemini | Navigation, Mapping |
+| 6 | Chrysalis | Wind | Claude | Transformation, Growth |
+| 7 | Seraphina | Water | Claude | Harmony, Integration |
+| 8 | Alba | Water | GPT | Dawn Perspective, Fresh Eyes |
+
+### 8×9 Matrix Mapping
+- Each agent governs 9 segments of the 72-segment circle
+- Positions define phase relationships for Temporal Resonance
+- Elements influence oscillation frequency (Fire=1.2x, Earth=0.8x, Wind=1.1x, Water=0.9x)
+- Complementary pairs (1↔8, 2↔7, 3↔6, 4↔5) phase-lock
+
+---
+
+## Addon Modules
+
+### 1. Temporal Resonance (Breath-Paced Manifestation)
+
+**Purpose:** Bridge the 12:1 temporal asymmetry between agent generation (~3000 wpm) and human reading (~250 wpm).
+
+**Core Equations:**
+```
+τ_display = τ_thought · R_resonance(t)
+temperature_i(t) = 0.7 + 0.15 cos(θ_i - Φ_global)
+top_p_i(t) = 0.9 + 0.1 sin(2(θ_i - Φ_global))
+H(t) = Σ cos(θ_i - Φ_global)
+```
+
+**Features:**
+- 6-second breath cycle (inhale → pause → exhale → pause)
+- Per-agent phase alignment
+- Temperature/top_p modulation based on resonance
+- `[BREATH FIELD]` context injection
+- UI widget (🌀) showing breath ring and agent dots
+
+**Endpoints:**
+- `POST /api/temporal/toggle`
+- `GET /api/temporal/status`
+
+**Status:** Integrated into index.ts + ui.ts (hooks active)
+
+---
+
+### 2. Screening Room (Video Perception)
+
+**Purpose:** Enable agents to perceive and analyze video through hierarchical frame extraction.
+
+**Hierarchy Levels:**
+| Level | Interval | Purpose |
+|-------|----------|---------|
+| Arc | 1/sec | Narrative overview |
+| Scene | 2/sec | Transitions |
+| Action | 5/sec | Motion beats |
+| Motion | 10/sec | Detail |
+| Full | 30/sec | Complete resolution |
+
+**Flow:**
+1. User processes video in `michronics.com/theater.html`
+2. Click "Send to Academy" → uploads to `/api/screening/upload`
+3. Manifest stored in KV, frames in R2
+4. 🎬 lights up in Academy control bar
+5. Agents receive `[SCREENING ROOM]` context injection
+6. Agents use `[VIEW_FRAME: N]` commands
+
+**Endpoints:**
+- `POST /api/screening/upload`
+- `GET /api/screening/status`
+- `GET /api/screening/manifest`
+- `GET /api/screening/frame/:index`
+- `GET /api/screening/level/:name`
+- `POST /api/screening/end`
+
+**Status:** Integrated into index.ts + ui.ts (hooks active)
+
+---
+
+### 3. Voice Synthesis (11Labs)
+
+**Features:**
+- Per-agent voice mapping
+- Audio caching in R2
+- Session recording for download
+- Voice queue management
+
+**Endpoints:**
+- `POST /api/speak`
+- `POST /api/sound/toggle`
+- `GET /api/sound/status`
+
+**Status:** Active
+
+---
+
+## KV Schema (CLUBHOUSE_KV)
+
+### Core State
+| Key Pattern | Purpose |
+|-------------|---------|
+| `session:{id}` | Auth sessions (7-day TTL) |
+| `state:{sanctumId}` | Sanctum conversation state |
+| `scratchpad:{agentId}` | Working memory per agent |
+| `name:{agentId}` | Custom agent names |
+| `wisdom:{agentId}` | Long-term memories |
+| `phantom:{agentId}` | Behavioral patterns |
+
+### Addon State
+| Key Pattern | Purpose |
+|-------------|---------|
+| `temporal:state` | Breath phase tracking |
+| `screening:state` | Active video session |
+| `screening:manifest` | Video metadata |
+| `sound:enabled` | Global sound toggle |
+| `vision:enabled` | Global vision toggle |
+
+---
+
+## R2 Schema (CLUBHOUSE_DOCS)
+
+| Prefix | Purpose |
+|--------|---------|
+| `shared/` | Shared library documents |
+| `images/` | Shared library images |
+| `private/{agentId}/` | Agent private files |
+| `audio/` | Cached voice audio |
+| `screening/frames/{id}/` | Video keyframes |
+
+---
+
+## UI Control Bar
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ [Spectrum] [👁] [🔊] [🌀] [🎬] [🛑] [⏻]                │
+│  Health   Vision Sound Temporal Screening Kill Logout   │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## External Dependencies
+
+| Service | Purpose | Env Var |
+|---------|---------|---------|
+| Anthropic | Claude agents | `ANTHROPIC_API_KEY` |
+| OpenAI | GPT agents (Alba) | `OPENAI_API_KEY` |
+| Google AI | Gemini (Cartographer) | `GOOGLE_API_KEY` |
+| xAI | Grok (optional) | `XAI_API_KEY` |
+| ElevenLabs | Voice synthesis | `ELEVENLABS_API_KEY` |
+| Cloudflare | Workers, KV, R2 | (wrangler.toml) |
+
+---
+
+## Business Model (Planned)
+
+```
+┌─────────────────────────────────────────┐
+│              FREE TIER                  │
+│  Core Academy (Sanctum, Alcove, etc.)   │
+└─────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│            PAID MODULES                 │
+│  Temporal | Screening | Voice | Arena   │
+│  (Hooks dormant until license active)   │
+└─────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│            TOKEN RAIL                   │
+│  Prepaid credits for API calls, voice   │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Deployment
+
+**Academy Worker:**
+```bash
+cd academy
+npm install
+wrangler deploy
+```
+URL: `clubhouse.vouch4us.workers.dev`
+
+**Static Pages (angel1):**
+- Repo: `github.com/regencyfn-alt/angel1`
+- URL: `michronics.com`
+- Theater: `michronics.com/theater.html` (not linked publicly)
+
+---
+
+## Refactoring Roadmap
+
+### Current State (v2.0)
+- ✅ Monolithic but functional
+- ✅ Temporal Resonance integrated
+- ✅ Screening Room integrated
+- ✅ All in index.ts + ui.ts
+
+### Target State (v3.0)
+- [ ] Extract addon code back to separate modules
+- [ ] Create `// === ADDON HOOKS ===` section in core
+- [ ] Thin hooks import from `/modules/` when activated
+- [ ] License flag checks before hook execution
+- [ ] index.ts target: ~2,000 lines (routes + core only)
+
+### Module Extraction Priority
+1. Temporal Resonance → `modules/temporal-resonance.ts`
+2. Screening Room → `modules/screening-room.ts`
+3. Voice System → `modules/voice.ts`
+4. Wisdom/Memory → `modules/wisdom.ts`
+
+---
+
+## Notes for Next Agent
+
+- `index.ts` is large but organized by section (search for `// ===`)
+- Hooks for addons are currently inline, not yet extracted
+- Standalone module files are reference implementations for future extraction
+- The 8×9 matrix mapping drives agent positioning and phase relationships
+- CHR Theory temporal regimes: agents (transition) ↔ humans (radiant)
+
+---
+
+*This architecture supports scaling via modular addons while maintaining a working monolith.*
