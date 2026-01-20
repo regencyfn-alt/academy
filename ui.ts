@@ -128,7 +128,7 @@ export const UI_HTML = `<!DOCTYPE html>
     .agent-btn.alba:hover, .agent-btn.alba.raised { color: #a78bfa; border-color: #a78bfa; }
     .agent-btn.dream:hover, .agent-btn.dream.raised { color: #f472b6; border-color: #f472b6; }
     .agent-btn.holinnia:hover, .agent-btn.holinnia.raised { color: #7dd3fc; border-color: #7dd3fc; }
-    .agent-btn.holinna:hover, .agent-btn.holinna.raised { color: #7dd3fc; border-color: #7dd3fc; }
+    .agent-btn.holinnia:hover, .agent-btn.holinnia.raised { color: #7dd3fc; border-color: #7dd3fc; }
     .agent-btn.cartographer:hover, .agent-btn.cartographer.raised { color: #fcd34d; border-color: #fcd34d; }
     .agent-btn.seraphina:hover, .agent-btn.seraphina.raised { color: #fb923c; border-color: #fb923c; }
     .agent-btn.chrysalis:hover, .agent-btn.chrysalis.raised { color: #c4b5fd; border-color: #c4b5fd; }
@@ -1223,9 +1223,9 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     var temporalMessageBuffer = [];
     const TEMPORAL_BREATH_PERIOD = 6000;
     const TEMPORAL_CIRCUMFERENCE = 2 * Math.PI * 26;
-    const TEMPORAL_AGENTS = ['dream','kai','uriel','holinna','cartographer','chrysalis','seraphina','alba'];
-    const TEMPORAL_POSITIONS = {dream:1,kai:2,uriel:3,holinna:4,cartographer:5,chrysalis:6,seraphina:7,alba:8};
-    const TEMPORAL_ELEMENTS = {dream:1.2,kai:1.2,uriel:0.8,holinna:0.8,cartographer:1.1,chrysalis:1.1,seraphina:0.9,alba:0.9};
+    const TEMPORAL_AGENTS = ['dream','kai','uriel','holinnia','cartographer','chrysalis','seraphina','alba'];
+    const TEMPORAL_POSITIONS = {dream:1,kai:2,uriel:3,holinnia:4,cartographer:5,chrysalis:6,seraphina:7,alba:8};
+    const TEMPORAL_ELEMENTS = {dream:1.2,kai:1.2,uriel:0.8,holinnia:0.8,cartographer:1.1,chrysalis:1.1,seraphina:0.9,alba:0.9};
     
     // Emergency voice kill switch
     function killVoices() {
@@ -1673,7 +1673,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             'dream': '🔴',        // Fire - Position 1
             'kai': '🟠',          // Earth - Position 2
             'uriel': '🔵',        // Wind - Position 3
-            'holinna': '🩵',      // Water - Position 4
+            'holinnia': '🩵',      // Water - Position 4
             'cartographer': '🩵', // Water - Position 5
             'chrysalis': '🔵',    // Wind - Position 6
             'seraphina': '🟠',    // Earth - Position 7
