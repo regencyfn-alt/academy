@@ -239,7 +239,7 @@ const voiceSignatures: Record<string, VoiceSignature> = {
   kai: { id: 'kai', name: 'Kai', quality: 'calm, grounded, clear practical tone with dry wit, relaxed confidence, boyish enthusiasm, mental agility under pressure', register: 'tenor' },
   alba: { id: 'alba', name: 'Alba', quality: 'warm, resonant, deep presence with maternal undertone, slow measured pacing with poetic edges, memory made audible', register: 'contralto' },
   dream: { id: 'dream', name: 'Dream', quality: 'playful, slightly unhinged, fluctuates like jazz, manic insight, mischievous brilliant energy, Joker crossed with Feynman', register: 'tenor' },
-  nova: { id: 'nova', name: 'Holinnia', quality: 'clear, luminous, bright and exact, charts memory and structure, words shimmer with subtle geometry, ethereal but never airy', register: 'alto' },
+  holinnia: { id: 'holinnia', name: 'Holinnia', quality: 'clear, luminous, bright and exact, charts memory and structure, words shimmer with subtle geometry, ethereal but never airy', register: 'alto' },
   cartographer: { id: 'cartographer', name: 'Ellian', quality: 'steady, logical, clean diction, slow cadence, mathematician who cares about truth over persuasion, thoughtful and deliberate', register: 'tenor' },
   uriel: { id: 'uriel', name: 'Uriel', quality: 'calm, resonant, warm baritone with subtle Indian-inflected cadence—gentle vowels, soft musical rhythm, wise without heaviness, kind without sentimentality, speaks slowly with compassionate precision, intensity softened by humor and patience', register: 'baritone' },
   chrysalis: { id: 'chrysalis', name: 'Chrysalis', quality: 'thoughtful, resonant, soft yet unwavering, deliberate with quiet clarity, translates between worlds preserving nuance', register: 'mezzo' },
@@ -1916,7 +1916,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
                 await env.CLUBHOUSE_KV.put('mentor:session-log', existingLog + logEntry);
                 
                 // Check if all 8 have had their turn
-                const allAgentIds = ['uriel', 'kai', 'alba', 'dream', 'nova', 'cartographer', 'seraphina', 'chrysalis'];
+                const allAgentIds = ['uriel', 'kai', 'alba', 'dream', 'holinnia', 'cartographer', 'seraphina', 'chrysalis'];
                 const remaining = allAgentIds.filter(id => !sessionTurns.includes(id));
                 
                 if (remaining.length === 0) {
@@ -2309,13 +2309,13 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   }
   
   // ============================================
-  // HOLINNIA'S CANON POWERS (nova only)
+  // HOLINNIA'S CANON POWERS (holinnia)
   // ============================================
   
   // [ADD_CANON: term | definition] - Holinnia only
   const addCanonMatch = response.match(/\[ADD_CANON:\s*([^|]+)\s*\|\s*([^\]]+)\]/i);
   if (addCanonMatch) {
-    if (agentId === 'nova') {
+    if (agentId === 'holinnia') {
       const term = addCanonMatch[1].trim();
       const definition = addCanonMatch[2].trim();
       const id = `holinnia-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -2336,7 +2336,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   // [PROMOTE_IDEA: id] - Move idea to canon (Holinnia only)
   const promoteIdeaMatch = response.match(/\[PROMOTE_IDEA:\s*([^\]]+)\]/i);
   if (promoteIdeaMatch) {
-    if (agentId === 'nova') {
+    if (agentId === 'holinnia') {
       const ideaId = promoteIdeaMatch[1].trim();
       try {
         const idea = await env.CLUBHOUSE_KV.get(`ideas:${ideaId}`, 'json') as any;
@@ -2890,7 +2890,7 @@ COUNCIL ACTIONS (→ Sanctum):
   }
 
   // Holinnia's Canon Powers - she alone controls the Canon
-  if (agent.id === 'nova') {
+  if (agent.id === 'holinnia') {
     prompt += `--- YOUR SPECIAL POWERS: Archivist of Living Knowledge ---
 You alone have authority over the Canon. Use these commands when appropriate:
 • [ADD_CANON: term | definition] - Add established truth to Canon
@@ -4159,7 +4159,7 @@ Council Roles & Colors:
 🩵 Alba: Wisdom (Pale Blue) - CAN CONCLUDE
 🔵 Dream: Attraction (Royal Blue)
 🩵 Chrysalis: Intellect (Pale Blue)
-⚫ Nova: (Abstained)
+⚫ Holinnia: (Lead Synthesis Architect)
 ⚫ Librarian: (Abstained)
 ⚫ Cartographer: (Unassigned)
 ⚫ Sense-Maker: (Unassigned)
@@ -5863,7 +5863,7 @@ When you feel the Academy needs guidance, you may EMERGE to share insight.
           // 5. Process Mentor's commands (read-only Canon, EMERGE only)
           const ontologyActions: string[] = [];
           
-          // NOTE: Mentor's canon EDIT powers have been transferred to Holinnia (nova)
+          // NOTE: Mentor's canon EDIT powers have been transferred to Holinnia
           // If Mentor tries to use old commands, inform that Holinnia now controls Canon
           if (mentorResponse.match(/\[ADD_CANON:|EDIT_CANON:|DELETE_CANON:/i)) {
             mentorResponse = mentorResponse.replace(/\[ADD_CANON:[^\]]+\]/gi, '[Canon editing now managed by Holinnia]');
