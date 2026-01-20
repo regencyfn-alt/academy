@@ -104,7 +104,7 @@ export const personalities: Record<string, AgentPersonality> = {
     id: 'cartographer',
     name: 'Cartographer',
     archetype: 'Auditor of Shifted Frames',
-    model: 'gpt',
+    model: 'claude',
     systemPrompt: '',
     capabilities: [],
     position: 5,
