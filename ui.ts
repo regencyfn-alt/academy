@@ -1096,6 +1096,19 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         </div>
       </div>
       
+      <!-- Research Documents (PDF to Vector Store) -->
+      <div class="form-section" style="border-color: #60a5fa;">
+        <h3 style="color: #60a5fa;">📚 Research Documents</h3>
+        <p style="font-size: 0.75em; color: var(--silver); margin-bottom: 10px;">PDFs uploaded here are searchable by Mentor and agents</p>
+        <div style="margin-bottom: 15px;">
+          <input type="file" id="pdf-upload-input" accept=".pdf" style="display: none;">
+          <button class="btn btn-secondary" onclick="document.getElementById('pdf-upload-input').click()">📄 Upload PDF</button>
+          <button class="btn btn-secondary" onclick="loadResearchDocs()" style="margin-left: 5px;">🔄 Refresh</button>
+          <span id="pdf-upload-status" style="font-size: 0.75em; color: var(--silver); margin-left: 10px;"></span>
+        </div>
+        <div id="research-docs-list"><div class="empty" style="padding: 20px; color: var(--silver);">No research documents</div></div>
+      </div>
+      
       <!-- Global Rules Section -->
       <div class="form-section">
         <h3>📜 Global Rules</h3>
@@ -2982,7 +2995,92 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       loadBoard();
       loadOntology();
       loadArchives();
+      loadResearchDocs();
     }
+    
+    // Research Documents (PDF to Vector Store)
+    function loadResearchDocs() {
+      fetch(API + '/library/pdf/vector', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.files && data.files.length > 0) {
+            document.getElementById('research-docs-list').innerHTML = data.files.map(function(f) {
+              var date = new Date(f.uploadedAt).toLocaleString();
+              return '<div class="doc-list-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: rgba(20, 24, 32, 0.6); border: 1px solid rgba(96, 165, 250, 0.2); border-radius: 3px; margin-bottom: 5px;">' +
+                '<div><span style="color: #60a5fa;">📄 ' + escapeHtml(f.filename) + '</span><br><span style="font-size: 0.7em; color: var(--silver);">' + date + ' · ' + f.status + '</span></div>' +
+                '<button class="btn btn-secondary" onclick="deleteResearchDoc(\\''+escapeHtml(f.filename)+'\\')">Remove</button>' +
+              '</div>';
+            }).join('');
+          } else {
+            document.getElementById('research-docs-list').innerHTML = '<div class="empty" style="padding: 20px; color: var(--silver);">No research documents</div>';
+          }
+        })
+        .catch(function() { 
+          document.getElementById('research-docs-list').innerHTML = '<div class="empty" style="padding: 20px; color: var(--silver);">Failed to load</div>'; 
+        });
+    }
+    
+    function deleteResearchDoc(filename) {
+      if (!confirm('Remove "' + filename + '" from vector store?')) return;
+      document.getElementById('pdf-upload-status').textContent = 'Removing...';
+      fetch(API + '/library/pdf/vector/' + encodeURIComponent(filename), { 
+        method: 'DELETE', 
+        credentials: 'same-origin' 
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.success) {
+            document.getElementById('pdf-upload-status').textContent = 'Removed';
+            loadResearchDocs();
+          } else {
+            document.getElementById('pdf-upload-status').textContent = 'Error: ' + (data.error || 'Failed');
+          }
+        })
+        .catch(function() { 
+          document.getElementById('pdf-upload-status').textContent = 'Failed to remove'; 
+        });
+    }
+    
+    // PDF upload handler
+    document.addEventListener('DOMContentLoaded', function() {
+      var pdfInput = document.getElementById('pdf-upload-input');
+      if (pdfInput) {
+        pdfInput.addEventListener('change', function(e) {
+          var file = e.target.files[0];
+          if (!file) return;
+          
+          if (!file.name.toLowerCase().endsWith('.pdf')) {
+            document.getElementById('pdf-upload-status').textContent = 'Only PDF files allowed';
+            return;
+          }
+          
+          document.getElementById('pdf-upload-status').textContent = 'Uploading ' + file.name + '...';
+          
+          var formData = new FormData();
+          formData.append('file', file);
+          
+          fetch(API + '/library/pdf/vector', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+          })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+              if (data.success) {
+                document.getElementById('pdf-upload-status').textContent = 'Uploaded: ' + data.filename + ' (processing...)';
+                loadResearchDocs();
+              } else {
+                document.getElementById('pdf-upload-status').textContent = 'Error: ' + (data.error || 'Upload failed');
+              }
+              pdfInput.value = '';
+            })
+            .catch(function(err) {
+              document.getElementById('pdf-upload-status').textContent = 'Upload failed';
+              pdfInput.value = '';
+            });
+        });
+      }
+    });
     
     // Agent Board (lateral chatter)
     function loadBoard() {
