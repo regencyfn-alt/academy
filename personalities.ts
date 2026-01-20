@@ -91,8 +91,8 @@ export const personalities: Record<string, AgentPersonality> = {
   // WATER (Slate) — Positions 4 & 5
   holinna: {
     id: 'holinna',
-    name: 'Holinna',
-    archetype: 'Archivist of Living Knowledge',
+    name: 'Holinnia',
+    archetype: 'Lead Synthesis Architect',
     model: 'claude',
     systemPrompt: '',
     capabilities: [],
