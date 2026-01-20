@@ -4849,6 +4849,169 @@ INSTRUCTIONS:
       }
 
       // ============================================
+      // PDF TO VECTOR STORE (Research Documents)
+      // ============================================
+      
+      // POST /library/pdf/vector - upload PDF to OpenAI vector store for agent search
+      if (path === '/library/pdf/vector' && method === 'POST') {
+        const vectorStoreId = env.MENTOR_VECTOR_STORE_ID || 'vs_6960e06c2de4819194c8b317835db5a0';
+        
+        if (!env.OPENAI_API_KEY) {
+          return jsonResponse({ error: 'OpenAI API key not configured' }, 500);
+        }
+        
+        try {
+          const formData = await request.formData();
+          const file = formData.get('file') as File;
+          
+          if (!file) {
+            return jsonResponse({ error: 'No file provided' }, 400);
+          }
+          
+          if (!file.name.toLowerCase().endsWith('.pdf')) {
+            return jsonResponse({ error: 'Only PDF files allowed' }, 400);
+          }
+          
+          // Check size (20MB max for OpenAI)
+          if (file.size > 20 * 1024 * 1024) {
+            return jsonResponse({ error: 'File too large (max 20MB)' }, 400);
+          }
+          
+          // 1. Upload file to OpenAI Files API
+          const uploadFormData = new FormData();
+          uploadFormData.append('file', file, file.name);
+          uploadFormData.append('purpose', 'assistants');
+          
+          const uploadResponse = await fetch('https://api.openai.com/v1/files', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.OPENAI_API_KEY}`
+            },
+            body: uploadFormData
+          });
+          
+          if (!uploadResponse.ok) {
+            const error = await uploadResponse.text();
+            console.error('[PDF Upload] OpenAI file upload failed:', error);
+            return jsonResponse({ error: 'Failed to upload file to OpenAI' }, 500);
+          }
+          
+          const uploadData = await uploadResponse.json() as { id: string; filename: string; bytes: number };
+          console.log(`[PDF Upload] File uploaded to OpenAI: ${uploadData.id}`);
+          
+          // 2. Attach file to vector store
+          const attachResponse = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+              'Content-Type': 'application/json',
+              'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({ file_id: uploadData.id })
+          });
+          
+          if (!attachResponse.ok) {
+            const error = await attachResponse.text();
+            console.error('[PDF Upload] Vector store attach failed:', error);
+            return jsonResponse({ error: 'Failed to attach file to vector store' }, 500);
+          }
+          
+          const attachData = await attachResponse.json() as { id: string; status: string };
+          console.log(`[PDF Upload] File attached to vector store: ${attachData.id}, status: ${attachData.status}`);
+          
+          // 3. Also store reference in R2 for listing
+          await env.CLUBHOUSE_DOCS.put(`research/${file.name}`, JSON.stringify({
+            openaiFileId: uploadData.id,
+            vectorStoreFileId: attachData.id,
+            filename: file.name,
+            size: file.size,
+            uploadedAt: new Date().toISOString(),
+            status: attachData.status
+          }), {
+            httpMetadata: { contentType: 'application/json' }
+          });
+          
+          return jsonResponse({ 
+            success: true, 
+            filename: file.name,
+            fileId: uploadData.id,
+            vectorStoreFileId: attachData.id,
+            status: attachData.status
+          });
+          
+        } catch (error: any) {
+          console.error('[PDF Upload] Error:', error);
+          return jsonResponse({ error: error.message || 'Upload failed' }, 500);
+        }
+      }
+      
+      // GET /library/pdf/vector - list PDFs in vector store
+      if (path === '/library/pdf/vector' && method === 'GET') {
+        try {
+          const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'research/' });
+          const files: any[] = [];
+          
+          for (const obj of list.objects) {
+            const data = await env.CLUBHOUSE_DOCS.get(obj.key);
+            if (data) {
+              const meta = await data.json() as any;
+              files.push({
+                filename: meta.filename,
+                uploadedAt: meta.uploadedAt,
+                status: meta.status,
+                fileId: meta.openaiFileId
+              });
+            }
+          }
+          
+          return jsonResponse({ files });
+        } catch (error: any) {
+          return jsonResponse({ error: error.message }, 500);
+        }
+      }
+      
+      // DELETE /library/pdf/vector/:filename - remove PDF from vector store
+      const deletePdfMatch = path.match(/^\/library\/pdf\/vector\/(.+)$/);
+      if (deletePdfMatch && method === 'DELETE') {
+        const filename = decodeURIComponent(deletePdfMatch[1]);
+        const vectorStoreId = env.MENTOR_VECTOR_STORE_ID || 'vs_6960e06c2de4819194c8b317835db5a0';
+        
+        try {
+          // Get the file reference
+          const refObj = await env.CLUBHOUSE_DOCS.get(`research/${filename}`);
+          if (!refObj) {
+            return jsonResponse({ error: 'File not found' }, 404);
+          }
+          
+          const meta = await refObj.json() as any;
+          
+          // Delete from vector store
+          await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files/${meta.vectorStoreFileId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+              'OpenAI-Beta': 'assistants=v2'
+            }
+          });
+          
+          // Delete the OpenAI file
+          await fetch(`https://api.openai.com/v1/files/${meta.openaiFileId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${env.OPENAI_API_KEY}`
+            }
+          });
+          
+          // Delete R2 reference
+          await env.CLUBHOUSE_DOCS.delete(`research/${filename}`);
+          
+          return jsonResponse({ success: true, filename });
+        } catch (error: any) {
+          return jsonResponse({ error: error.message }, 500);
+        }
+      }
+
+      // ============================================
       // SHARED ARCHIVES (All agents see these)
       // ============================================
 
