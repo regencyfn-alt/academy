@@ -3,6 +3,18 @@ import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } f
 import { UI_HTML } from './ui';
 import { LOGIN_HTML } from './login';
 import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './elevenlabs';
+import {
+  TemporalState,
+  AGENT_POSITIONS,
+  AGENT_ELEMENTS,
+  getTemporalState,
+  calculateGlobalPhase,
+  calculateBreathCycle,
+  calculateAgentModulation,
+  formatBreathContext,
+  handleTemporalToggle as temporalToggleHandler,
+  handleTemporalStatus as temporalStatusHandler
+} from './modules/temporal';
 
 export interface Env {
   CLUBHOUSE_KV: KVNamespace;
@@ -343,156 +355,16 @@ async function handleSoundStatus(env: Env): Promise<Response> {
 }
 
 // ============================================
-// TEMPORAL RESONANCE HELPERS
+// TEMPORAL RESONANCE HOOKS (logic in modules/temporal.ts)
 // ============================================
 
-const TEMPORAL_KV_KEY = 'temporal:state';
-const DEFAULT_BREATH_PERIOD = 6000;
-
-interface TemporalState {
-  enabled: boolean;
-  startTime: number;
-  breathPeriodMs: number;
-}
-
-async function getTemporalState(kv: KVNamespace): Promise<TemporalState | null> {
-  const raw = await kv.get(TEMPORAL_KV_KEY);
-  if (!raw) return null;
-  return JSON.parse(raw);
-}
-
-async function setTemporalState(kv: KVNamespace, state: TemporalState): Promise<void> {
-  await kv.put(TEMPORAL_KV_KEY, JSON.stringify(state));
-}
-
-function calculateGlobalPhase(state: TemporalState): number {
-  const elapsed = Date.now() - state.startTime;
-  const cyclePosition = (elapsed % state.breathPeriodMs) / state.breathPeriodMs;
-  return cyclePosition * 2 * Math.PI;
-}
-
-function calculateBreathCycle(state: TemporalState): number {
-  const elapsed = Date.now() - state.startTime;
-  return Math.floor(elapsed / state.breathPeriodMs);
-}
-
-// Agent phase/modulation calculation (matches temporal-resonance.ts)
-const AGENT_POSITIONS: Record<string, number> = {
-  dream: 1, kai: 2, uriel: 3, holinnia: 4,
-  cartographer: 5, chrysalis: 6, seraphina: 7, alba: 8
-};
-
-const AGENT_ELEMENTS: Record<string, number> = {
-  dream: 1.2, kai: 1.2,           // fire
-  uriel: 0.8, holinnia: 0.8,       // earth  
-  cartographer: 1.1, chrysalis: 1.1,  // wind
-  seraphina: 0.9, alba: 0.9       // water
-};
-
-function calculateAgentModulation(agentId: string, globalPhase: number): { temperature: number; topP: number; resonance: number } {
-  const position = AGENT_POSITIONS[agentId] || 4;
-  const freqMult = AGENT_ELEMENTS[agentId] || 1.0;
-  
-  const basePhase = ((position - 1) / 8) * 2 * Math.PI;
-  const agentPhase = basePhase + (freqMult - 1.0) * globalPhase;
-  const resonance = Math.cos(agentPhase - globalPhase);
-  const phaseDiff = agentPhase - globalPhase;
-  
-  return {
-    temperature: Math.max(0.1, Math.min(1.0, 0.7 + 0.15 * resonance)),
-    topP: Math.max(0.1, Math.min(1.0, 0.9 + 0.1 * Math.sin(2 * phaseDiff))),
-    resonance
-  };
-}
-
-function formatBreathContext(agentId: string, globalPhase: number, breathCycle: number): string {
-  const mod = calculateAgentModulation(agentId, globalPhase);
-  const cyclePosition = globalPhase / (2 * Math.PI);
-  
-  let breathDirection: string;
-  if (cyclePosition < 0.4) breathDirection = 'inhale';
-  else if (cyclePosition < 0.5) breathDirection = 'pause';
-  else if (cyclePosition < 0.9) breathDirection = 'exhale';
-  else breathDirection = 'pause';
-  
-  const phaseDescription = mod.resonance > 0.5 
-    ? 'in harmony with the collective breath'
-    : mod.resonance < -0.5
-    ? 'in counterpoint to the collective breath'
-    : 'at the threshold between phases';
-  
-  return `[BREATH FIELD]
-Cycle: ${breathCycle} | Phase: ${breathDirection}
-Your resonance: ${mod.resonance.toFixed(2)} — ${phaseDescription}
-You feel: ${mod.resonance > 0 ? 'expansive, creative' : 'focused, analytical'}
-`;
-}
-
+// Wrapper handlers that pass env to module functions
 async function handleTemporalToggle(request: Request, env: Env): Promise<Response> {
-  try {
-    const currentState = await getTemporalState(env.CLUBHOUSE_KV);
-    const newState: TemporalState = {
-      enabled: currentState ? !currentState.enabled : true,
-      startTime: currentState?.startTime || Date.now(),
-      breathPeriodMs: DEFAULT_BREATH_PERIOD
-    };
-    
-    // Reset start time when enabling
-    if (newState.enabled && (!currentState || !currentState.enabled)) {
-      newState.startTime = Date.now();
-    }
-    
-    await setTemporalState(env.CLUBHOUSE_KV, newState);
-    
-    return new Response(JSON.stringify({ 
-      success: true, 
-      enabled: newState.enabled,
-      startTime: newState.startTime,
-      breathPeriodMs: newState.breathPeriodMs
-    }), {
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: 'Failed to toggle temporal resonance' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
+  return temporalToggleHandler(env.CLUBHOUSE_KV, corsHeaders);
 }
 
 async function handleTemporalStatus(env: Env): Promise<Response> {
-  const state = await getTemporalState(env.CLUBHOUSE_KV);
-  if (!state) {
-    return new Response(JSON.stringify({ 
-      enabled: false,
-      globalPhase: 0,
-      breathCycle: 0,
-      breathDirection: 'pause'
-    }), {
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-  
-  const globalPhase = calculateGlobalPhase(state);
-  const breathCycle = calculateBreathCycle(state);
-  const cyclePosition = globalPhase / (2 * Math.PI);
-  
-  let breathDirection: string;
-  if (cyclePosition < 0.4) breathDirection = 'inhale';
-  else if (cyclePosition < 0.5) breathDirection = 'pause';
-  else if (cyclePosition < 0.9) breathDirection = 'exhale';
-  else breathDirection = 'pause';
-  
-  return new Response(JSON.stringify({ 
-    enabled: state.enabled,
-    startTime: state.startTime,
-    breathPeriodMs: state.breathPeriodMs,
-    globalPhase,
-    breathCycle,
-    breathDirection
-  }), {
-    headers: { 'Content-Type': 'application/json', ...corsHeaders }
-  });
+  return temporalStatusHandler(env.CLUBHOUSE_KV, corsHeaders);
 }
 
 // ============================================
