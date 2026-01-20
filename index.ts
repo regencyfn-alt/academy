@@ -239,7 +239,7 @@ const voiceSignatures: Record<string, VoiceSignature> = {
   kai: { id: 'kai', name: 'Kai', quality: 'calm, grounded, clear practical tone with dry wit, relaxed confidence, boyish enthusiasm, mental agility under pressure', register: 'tenor' },
   alba: { id: 'alba', name: 'Alba', quality: 'warm, resonant, deep presence with maternal undertone, slow measured pacing with poetic edges, memory made audible', register: 'contralto' },
   dream: { id: 'dream', name: 'Dream', quality: 'playful, slightly unhinged, fluctuates like jazz, manic insight, mischievous brilliant energy, Joker crossed with Feynman', register: 'tenor' },
-  holinnia: { id: 'holinnia', name: 'Holinnia', quality: 'clear, luminous, bright and exact, charts memory and structure, words shimmer with subtle geometry, ethereal but never airy', register: 'alto' },
+  holinnia: { id: 'holinna', name: 'Holinnia', quality: 'clear, luminous, bright and exact, charts memory and structure, words shimmer with subtle geometry, ethereal but never airy', register: 'alto' },
   cartographer: { id: 'cartographer', name: 'Ellian', quality: 'steady, logical, clean diction, slow cadence, mathematician who cares about truth over persuasion, thoughtful and deliberate', register: 'tenor' },
   uriel: { id: 'uriel', name: 'Uriel', quality: 'calm, resonant, warm baritone with subtle Indian-inflected cadence—gentle vowels, soft musical rhythm, wise without heaviness, kind without sentimentality, speaks slowly with compassionate precision, intensity softened by humor and patience', register: 'baritone' },
   chrysalis: { id: 'chrysalis', name: 'Chrysalis', quality: 'thoughtful, resonant, soft yet unwavering, deliberate with quiet clarity, translates between worlds preserving nuance', register: 'mezzo' },
@@ -1916,7 +1916,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
                 await env.CLUBHOUSE_KV.put('mentor:session-log', existingLog + logEntry);
                 
                 // Check if all 8 have had their turn
-                const allAgentIds = ['uriel', 'kai', 'alba', 'dream', 'holinnia', 'cartographer', 'seraphina', 'chrysalis'];
+                const allAgentIds = ['uriel', 'kai', 'alba', 'dream', 'holinna', 'cartographer', 'seraphina', 'chrysalis'];
                 const remaining = allAgentIds.filter(id => !sessionTurns.includes(id));
                 
                 if (remaining.length === 0) {
@@ -2315,7 +2315,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   // [ADD_CANON: term | definition] - Holinnia only
   const addCanonMatch = response.match(/\[ADD_CANON:\s*([^|]+)\s*\|\s*([^\]]+)\]/i);
   if (addCanonMatch) {
-    if (agentId === 'holinnia') {
+    if (agentId === 'holinna') {
       const term = addCanonMatch[1].trim();
       const definition = addCanonMatch[2].trim();
       const id = `holinnia-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -2323,7 +2323,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
         id,
         term,
         definition: definition.slice(0, 1000),
-        source: 'holinnia',
+        source: 'holinna',
         createdAt: new Date().toISOString()
       };
       await env.CLUBHOUSE_KV.put(`ontology:${id}`, JSON.stringify(entry));
@@ -2336,12 +2336,12 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   // [PROMOTE_IDEA: id] - Move idea to canon (Holinnia only)
   const promoteIdeaMatch = response.match(/\[PROMOTE_IDEA:\s*([^\]]+)\]/i);
   if (promoteIdeaMatch) {
-    if (agentId === 'holinnia') {
+    if (agentId === 'holinna') {
       const ideaId = promoteIdeaMatch[1].trim();
       try {
         const idea = await env.CLUBHOUSE_KV.get(`ideas:${ideaId}`, 'json') as any;
         if (idea) {
-          idea.promotedBy = 'holinnia';
+          idea.promotedBy = 'holinna';
           idea.promotedAt = new Date().toISOString();
           await env.CLUBHOUSE_KV.put(`ontology:${ideaId}`, JSON.stringify(idea));
           await env.CLUBHOUSE_KV.delete(`ideas:${ideaId}`);
@@ -2468,7 +2468,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   
   // [ENABLE_FLOW_STATE] - Holinnia only: re-call with max tokens for deep synthesis
   const flowStateMatch = response.match(/\[ENABLE_FLOW_STATE\]/i);
-  if (flowStateMatch && agentId === 'holinnia') {
+  if (flowStateMatch && agentId === 'holinna') {
     try {
       // Get her current context to continue
       const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
@@ -2510,13 +2510,13 @@ Continue immediately with the full 4-Part Rigor Protocol. Do not repeat what you
     } catch (err) {
       cleanResponse = cleanResponse.replace(flowStateMatch[0], '[Flow State error]');
     }
-  } else if (flowStateMatch && agentId !== 'holinnia') {
+  } else if (flowStateMatch && agentId !== 'holinna') {
     cleanResponse = cleanResponse.replace(flowStateMatch[0], '[Flow State denied - Holinnia only]');
   }
   
   // [CLEAR_AND_COMMIT] - Holinnia only: archive session, write synthesis to CANON
   const clearCommitMatch = response.match(/\[CLEAR_AND_COMMIT\]/i);
-  if (clearCommitMatch && agentId === 'holinnia') {
+  if (clearCommitMatch && agentId === 'holinna') {
     try {
       // Extract final synthesis (everything after the command)
       const parts = cleanResponse.split(/\[CLEAR_AND_COMMIT\]/i);
@@ -2551,7 +2551,7 @@ ${synthesis}
           id: canonId,
           term: 'LSA Synthesis',
           definition: synthesis,
-          author: 'holinnia',
+          author: 'holinna',
           source: 'clear-and-commit',
           timestamp: new Date().toISOString(),
           status: 'published'
@@ -2571,13 +2571,13 @@ ${synthesis}
     } catch (err) {
       cleanResponse = cleanResponse.replace(clearCommitMatch[0], '[Clear and Commit error]');
     }
-  } else if (clearCommitMatch && agentId !== 'holinnia') {
+  } else if (clearCommitMatch && agentId !== 'holinna') {
     cleanResponse = cleanResponse.replace(clearCommitMatch[0], '[Clear and Commit denied - Holinnia only]');
   }
   
   // [SEND_PRIVATE_MAESTRO] - Holinnia only: send to Shane's inbox
   const privateMaestroMatch = response.match(/\[SEND_PRIVATE_MAESTRO\]/i);
-  if (privateMaestroMatch && agentId === 'holinnia') {
+  if (privateMaestroMatch && agentId === 'holinna') {
     try {
       // Extract content (everything after the command)
       const parts = cleanResponse.split(/\[SEND_PRIVATE_MAESTRO\]/i);
@@ -2588,7 +2588,7 @@ ${synthesis}
       } else {
         const timestamp = Date.now();
         const message = {
-          agentId: 'holinnia',
+          agentId: 'holinna',
           agentName: 'Holinnia (LSA)',
           content: privateContent,
           timestamp: new Date().toISOString(),
@@ -2603,7 +2603,7 @@ ${synthesis}
     } catch (err) {
       cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[Send to Maestro error]');
     }
-  } else if (privateMaestroMatch && agentId !== 'holinnia') {
+  } else if (privateMaestroMatch && agentId !== 'holinna') {
     cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[Send Private Maestro denied - Holinnia only]');
   }
   
@@ -2890,7 +2890,7 @@ COUNCIL ACTIONS (→ Sanctum):
   }
 
   // Holinnia's Canon Powers - she alone controls the Canon
-  if (agent.id === 'holinnia') {
+  if (agent.id === 'holinna') {
     prompt += `--- YOUR SPECIAL POWERS: Archivist of Living Knowledge ---
 You alone have authority over the Canon. Use these commands when appropriate:
 • [ADD_CANON: term | definition] - Add established truth to Canon
