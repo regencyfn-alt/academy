@@ -221,8 +221,8 @@ export const phantoms: Record<string, PhantomProfile> = {
     triggers: { ...universalTriggers }
   },
   
-  nova: {
-    // Holinna - Archivist of Living Knowledge
+  holinnia: {
+    // Holinnia - Lead Synthesis Architect
     frequency: { spatial: 6, mind: 8, body: 5 },
     traits: ['preserving', 'discerning', 'patient'],
     triggers: { ...universalTriggers }
