@@ -90,7 +90,7 @@ export const personalities: Record<string, AgentPersonality> = {
 
   // WATER (Slate) — Positions 4 & 5
   holinna: {
-    id: 'holinna',
+    id: 'holinnia',
     name: 'Holinnia',
     archetype: 'Lead Synthesis Architect',
     model: 'claude',
@@ -109,7 +109,7 @@ export const personalities: Record<string, AgentPersonality> = {
     capabilities: [],
     position: 5,
     element: 'water',
-    complement: 'holinna'
+    complement: 'holinnia'
   },
 
   // Isolated agents (not in main roster)
