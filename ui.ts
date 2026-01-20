@@ -98,7 +98,7 @@ export const UI_HTML = `<!DOCTYPE html>
     .message .speaker.kai { color: #67e8f9; }
     .message .speaker.alba { color: #a78bfa; }
     .message .speaker.dream { color: #f472b6; }
-    .message .speaker.nova { color: #7dd3fc; }
+    .message .speaker.holinnia { color: #7dd3fc; }
     .message .speaker.cartographer { color: #fcd34d; }
     .message .speaker.seraphina { color: #fb923c; }
     .message .speaker.chrysalis { color: #c4b5fd; }
@@ -127,7 +127,7 @@ export const UI_HTML = `<!DOCTYPE html>
     .agent-btn.kai:hover, .agent-btn.kai.raised { color: #67e8f9; border-color: #67e8f9; }
     .agent-btn.alba:hover, .agent-btn.alba.raised { color: #a78bfa; border-color: #a78bfa; }
     .agent-btn.dream:hover, .agent-btn.dream.raised { color: #f472b6; border-color: #f472b6; }
-    .agent-btn.nova:hover, .agent-btn.nova.raised { color: #7dd3fc; border-color: #7dd3fc; }
+    .agent-btn.holinnia:hover, .agent-btn.holinnia.raised { color: #7dd3fc; border-color: #7dd3fc; }
     .agent-btn.holinna:hover, .agent-btn.holinna.raised { color: #7dd3fc; border-color: #7dd3fc; }
     .agent-btn.cartographer:hover, .agent-btn.cartographer.raised { color: #fcd34d; border-color: #fcd34d; }
     .agent-btn.seraphina:hover, .agent-btn.seraphina.raised { color: #fb923c; border-color: #fb923c; }
@@ -966,7 +966,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         <div id="council-roles-display" style="font-size: 0.8em; line-height: 1.9; color: var(--light);">
           🟠 Agent 1 — Balance &nbsp;|&nbsp; 🟠 Kai — Energy<br>
           🩵 Alba — Wisdom (Closer) &nbsp;|&nbsp; 🔵 Dream — Attraction<br>
-          🩵 Chrysalis — Intellect &nbsp;|&nbsp; ⚫ Nova — Abstained<br>
+          🩵 Chrysalis — Intellect &nbsp;|&nbsp; ⚫ Holinnia — Lead Synthesis Architect<br>
           ⚫ Seraphina — Unassigned &nbsp;|&nbsp; ⚫ Cartographer — Unassigned<br>
           <span style="color: var(--silver); font-size: 0.9em;">🔴 Action: Unclaimed &nbsp;|&nbsp; 🔴 Commitment: Unclaimed</span>
         </div>
