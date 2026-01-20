@@ -2462,6 +2462,151 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
     }
   }
   
+  // ============================================
+  // HOLINNIA LSA COMMANDS (Lead Synthesis Architect)
+  // ============================================
+  
+  // [ENABLE_FLOW_STATE] - Holinnia only: re-call with max tokens for deep synthesis
+  const flowStateMatch = response.match(/\[ENABLE_FLOW_STATE\]/i);
+  if (flowStateMatch && agentId === 'holinna') {
+    try {
+      // Get her current context to continue
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
+      const existingText = cleanResponse.replace(flowStateMatch[0], '').trim();
+      
+      // Build continuation prompt
+      const continuationPrompt = `You requested Flow State. You have full token capacity now. Continue your synthesis from where you left off.
+
+Your partial work so far:
+${existingText}
+
+Continue immediately with the full 4-Part Rigor Protocol. Do not repeat what you've written.`;
+      
+      // Call Claude with max tokens
+      const continuationResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 8192,
+          temperature: 0.7,
+          messages: [{ role: 'user', content: continuationPrompt }]
+        })
+      });
+      
+      const contData = await continuationResponse.json() as any;
+      const continuation = contData.content?.[0]?.text || '';
+      
+      if (continuation) {
+        cleanResponse = existingText + '\n\n' + continuation;
+        cleanResponse = cleanResponse.replace(/\[ENABLE_FLOW_STATE\]/gi, '');
+      } else {
+        cleanResponse = cleanResponse.replace(flowStateMatch[0], '[Flow State activated but continuation failed]');
+      }
+    } catch (err) {
+      cleanResponse = cleanResponse.replace(flowStateMatch[0], '[Flow State error]');
+    }
+  } else if (flowStateMatch && agentId !== 'holinna') {
+    cleanResponse = cleanResponse.replace(flowStateMatch[0], '[Flow State denied - Holinnia only]');
+  }
+  
+  // [CLEAR_AND_COMMIT] - Holinnia only: archive session, write synthesis to CANON
+  const clearCommitMatch = response.match(/\[CLEAR_AND_COMMIT\]/i);
+  if (clearCommitMatch && agentId === 'holinna') {
+    try {
+      // Extract final synthesis (everything after the command)
+      const parts = cleanResponse.split(/\[CLEAR_AND_COMMIT\]/i);
+      const synthesis = parts[1]?.trim() || '';
+      
+      if (!synthesis) {
+        cleanResponse = cleanResponse.replace(clearCommitMatch[0], '[No synthesis content after CLEAR_AND_COMMIT]');
+      } else {
+        // 1. Archive current session to R2
+        const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
+        if (state) {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16);
+          const archiveName = `shared/ideas_archive/session_${timestamp}.md`;
+          
+          const archiveContent = `# Council Session Archive
+Archived by: Holinnia (Lead Synthesis Architect)
+Date: ${new Date().toISOString()}
+Topic: ${state.topic || 'Council Discussion'}
+
+## Messages
+${state.messages?.map((m: any) => `**${m.agentId}**: ${m.content}`).join('\n\n') || 'No messages'}
+
+## Final Synthesis
+${synthesis}
+`;
+          await env.CLUBHOUSE_DOCS.put(archiveName, archiveContent);
+        }
+        
+        // 2. Write synthesis to CANON (ontology)
+        const canonId = `canon-${Date.now()}`;
+        const canonEntry = {
+          id: canonId,
+          term: 'LSA Synthesis',
+          definition: synthesis,
+          author: 'holinnia',
+          source: 'clear-and-commit',
+          timestamp: new Date().toISOString(),
+          status: 'published'
+        };
+        await env.CLUBHOUSE_KV.put(`ontology:${canonId}`, JSON.stringify(canonEntry));
+        
+        // 3. Clear the session (but keep minimal state)
+        if (state) {
+          state.messages = [];
+          state.topic = '';
+          await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+        }
+        
+        // Replace command with confirmation, keep synthesis
+        cleanResponse = parts[0] + '[Session archived. CANON updated. Board cleared.]\n\n' + synthesis;
+      }
+    } catch (err) {
+      cleanResponse = cleanResponse.replace(clearCommitMatch[0], '[Clear and Commit error]');
+    }
+  } else if (clearCommitMatch && agentId !== 'holinna') {
+    cleanResponse = cleanResponse.replace(clearCommitMatch[0], '[Clear and Commit denied - Holinnia only]');
+  }
+  
+  // [SEND_PRIVATE_MAESTRO] - Holinnia only: send to Shane's inbox
+  const privateMaestroMatch = response.match(/\[SEND_PRIVATE_MAESTRO\]/i);
+  if (privateMaestroMatch && agentId === 'holinna') {
+    try {
+      // Extract content (everything after the command)
+      const parts = cleanResponse.split(/\[SEND_PRIVATE_MAESTRO\]/i);
+      const privateContent = parts[1]?.trim() || '';
+      
+      if (!privateContent) {
+        cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[No content after SEND_PRIVATE_MAESTRO]');
+      } else {
+        const timestamp = Date.now();
+        const message = {
+          agentId: 'holinna',
+          agentName: 'Holinnia (LSA)',
+          content: privateContent,
+          timestamp: new Date().toISOString(),
+          read: false,
+          type: 'lsa-synthesis'
+        };
+        await env.CLUBHOUSE_KV.put(`shane-inbox:${timestamp}`, JSON.stringify(message));
+        
+        // Replace command with confirmation
+        cleanResponse = parts[0] + '[Private synthesis sent to Maestro\'s inbox]';
+      }
+    } catch (err) {
+      cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[Send to Maestro error]');
+    }
+  } else if (privateMaestroMatch && agentId !== 'holinna') {
+    cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[Send Private Maestro denied - Holinnia only]');
+  }
+  
   return cleanResponse;
 }
 
