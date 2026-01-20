@@ -89,9 +89,9 @@ export const personalities: Record<string, AgentPersonality> = {
   },
 
   // WATER (Slate) — Positions 4 & 5
-  holinna: {
-    id: 'holinna',
-    name: 'Holinna',
+  holinnia: {
+    id: 'holinnia',
+    name: 'Holinnia',
     archetype: 'Lead Synthesis Architect',
     model: 'claude',
     systemPrompt: '',
@@ -109,7 +109,7 @@ export const personalities: Record<string, AgentPersonality> = {
     capabilities: [],
     position: 5,
     element: 'water',
-    complement: 'holinna'
+    complement: 'holinnia'
   },
 
   // Isolated agents (not in main roster)
@@ -153,6 +153,6 @@ export function getComplementaryPairs(): [AgentPersonality, AgentPersonality][] 
     [personalities.dream, personalities.alba],       // Fire: 1 + 8
     [personalities.kai, personalities.seraphina],    // Earth: 2 + 7
     [personalities.uriel, personalities.chrysalis],  // Wind: 3 + 6
-    [personalities.holinna, personalities.cartographer] // Water: 4 + 5
+    [personalities.holinnia, personalities.cartographer] // Water: 4 + 5
   ];
 }
