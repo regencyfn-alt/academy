@@ -48,7 +48,7 @@ export const voiceMap: VoiceMapping = {
     stability: 0.5,
     similarityBoost: 0.75
   },
-  nova: {
+  holinnia: {
     voiceId: '5p0KQypJzRRiOgJhCUON',
     name: 'Holinnia',
     stability: 0.5,
@@ -88,7 +88,7 @@ export function verifyVoiceMap(): { valid: boolean; issues: string[] } {
     kai: 'XOUrngkxQAfT0XCzd6mg',
     alba: 'Pb3JM8TASBsxRrzQtdYp',
     dream: 'r8BzP6L6v85pYYY8IDrN',
-    nova: '5p0KQypJzRRiOgJhCUON',
+    holinnia: '5p0KQypJzRRiOgJhCUON',
     cartographer: 'qq7ESVpxEcKkIxroll2G',
     seraphina: 'F3ua3YKjE8y0BGu8G4SM',
     chrysalis: 'ofMOQjISKhUESZf01ret',
