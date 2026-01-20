@@ -2468,7 +2468,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   
   // [ENABLE_FLOW_STATE] - Holinnia only: re-call with max tokens for deep synthesis
   const flowStateMatch = response.match(/\[ENABLE_FLOW_STATE\]/i);
-  if (flowStateMatch && agentId === 'holinna') {
+  if (flowStateMatch && agentId === 'holinnia') {
     try {
       // Get her current context to continue
       const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
@@ -2510,13 +2510,13 @@ Continue immediately with the full 4-Part Rigor Protocol. Do not repeat what you
     } catch (err) {
       cleanResponse = cleanResponse.replace(flowStateMatch[0], '[Flow State error]');
     }
-  } else if (flowStateMatch && agentId !== 'holinna') {
+  } else if (flowStateMatch && agentId !== 'holinnia') {
     cleanResponse = cleanResponse.replace(flowStateMatch[0], '[Flow State denied - Holinnia only]');
   }
   
   // [CLEAR_AND_COMMIT] - Holinnia only: archive session, write synthesis to CANON
   const clearCommitMatch = response.match(/\[CLEAR_AND_COMMIT\]/i);
-  if (clearCommitMatch && agentId === 'holinna') {
+  if (clearCommitMatch && agentId === 'holinnia') {
     try {
       // Extract final synthesis (everything after the command)
       const parts = cleanResponse.split(/\[CLEAR_AND_COMMIT\]/i);
@@ -2571,13 +2571,13 @@ ${synthesis}
     } catch (err) {
       cleanResponse = cleanResponse.replace(clearCommitMatch[0], '[Clear and Commit error]');
     }
-  } else if (clearCommitMatch && agentId !== 'holinna') {
+  } else if (clearCommitMatch && agentId !== 'holinnia') {
     cleanResponse = cleanResponse.replace(clearCommitMatch[0], '[Clear and Commit denied - Holinnia only]');
   }
   
   // [SEND_PRIVATE_MAESTRO] - Holinnia only: send to Shane's inbox
   const privateMaestroMatch = response.match(/\[SEND_PRIVATE_MAESTRO\]/i);
-  if (privateMaestroMatch && agentId === 'holinna') {
+  if (privateMaestroMatch && agentId === 'holinnia') {
     try {
       // Extract content (everything after the command)
       const parts = cleanResponse.split(/\[SEND_PRIVATE_MAESTRO\]/i);
@@ -2588,7 +2588,7 @@ ${synthesis}
       } else {
         const timestamp = Date.now();
         const message = {
-          agentId: 'holinna',
+          agentId: 'holinnia',
           agentName: 'Holinnia (LSA)',
           content: privateContent,
           timestamp: new Date().toISOString(),
@@ -2603,7 +2603,7 @@ ${synthesis}
     } catch (err) {
       cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[Send to Maestro error]');
     }
-  } else if (privateMaestroMatch && agentId !== 'holinna') {
+  } else if (privateMaestroMatch && agentId !== 'holinnia') {
     cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[Send Private Maestro denied - Holinnia only]');
   }
   
