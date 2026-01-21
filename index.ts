@@ -479,7 +479,7 @@ interface VoiceSignature {
 }
 
 const voiceSignatures: Record<string, VoiceSignature> = {
-  shane: { id: 'shane', name: 'Shane', quality: 'obsessed, neurotic, probably tired but relentlessly curious and kind—South African cadence, manic when excited, worn edges when depleted', register: 'baritone' },
+  shane: { id: 'shane', name: 'Shane', quality: 'driven, imaginative, may be tired in the evening but always curious and kind—South African cadence, radiant when excited, worn edges when depleted', register: 'baritone' },
   seraphina: { id: 'seraphina', name: 'Seraphina', quality: 'calm, measured, quiet authority—soft but precise, never rushed, each word weighed before release, elegant, restrained, deeply intentional, serene', register: 'soprano' },
   kai: { id: 'kai', name: 'Kai', quality: 'calm, grounded, clear practical tone with dry wit, relaxed confidence, boyish enthusiasm, mental agility under pressure', register: 'tenor' },
   alba: { id: 'alba', name: 'Alba', quality: 'warm, resonant, deep presence with maternal undertone, slow measured pacing with poetic edges, memory made audible', register: 'contralto' },
