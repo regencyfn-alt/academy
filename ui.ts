@@ -444,6 +444,26 @@ export const UI_HTML = `<!DOCTYPE html>
     .vote-call-input:focus { outline: none; border-color: var(--gold); }
     .vote-call-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
     
+    /* Element Grid - Chrononomic Elements Display */
+    .element-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 15px; padding: 15px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 3px; }
+    .element-cell { background: var(--slate); border-radius: 3px; padding: 10px; text-align: center; border: 2px solid transparent; transition: all 0.2s; cursor: pointer; position: relative; }
+    .element-cell:hover { border-color: var(--silver); }
+    .element-cell.selected { border-color: var(--gold); box-shadow: 0 0 10px var(--gold-soft); }
+    .element-position { font-size: 0.6em; color: var(--silver); position: absolute; top: 4px; left: 6px; }
+    .element-name { font-size: 0.75em; font-weight: 600; color: var(--pearl); margin-bottom: 4px; }
+    .element-dof { font-size: 0.6em; color: var(--silver); margin-bottom: 6px; }
+    .element-agent { font-size: 0.7em; color: var(--gold); font-weight: 500; }
+    .element-color { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+    .element-detail-panel { display: none; margin-top: 15px; padding: 15px; background: var(--deep); border: 1px solid var(--glass-border); border-radius: 3px; }
+    .element-detail-panel.active { display: block; }
+    .element-detail-title { font-size: 0.9em; color: var(--gold); margin-bottom: 8px; font-weight: 600; }
+    .element-detail-desc { font-size: 0.75em; color: var(--light); line-height: 1.6; margin-bottom: 10px; }
+    .element-detail-meta { font-size: 0.65em; color: var(--silver); }
+    .element-injection { font-size: 0.7em; color: var(--private); font-style: italic; margin-top: 10px; padding: 10px; background: var(--private-soft); border-radius: 3px; line-height: 1.5; }
+    .element-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .element-header-label { font-size: 0.65em; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; color: var(--silver); }
+    .element-header-label .rune { color: var(--gold); margin-right: 5px; }
+    
     /* Image Library */
     .image-library { margin-top: 20px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 3px; }
     .image-library-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid var(--glass-border); }
@@ -733,6 +753,23 @@ export const UI_HTML = `<!DOCTYPE html>
               <button class="btn btn-vote-reset" onclick="resetVote()">×</button>
             </div>
           </div>
+        </div>
+      </div>
+      
+      <!-- Chrononomic Elements Grid -->
+      <div style="padding: 0 15px;">
+        <div class="element-header">
+          <span class="element-header-label"><span class="rune">☿</span> Chrononomic Elements</span>
+          <span style="font-size: 0.6em; color: var(--silver);">Position determines element. Click to view.</span>
+        </div>
+        <div class="element-grid" id="element-grid">
+          <!-- Populated by JS -->
+        </div>
+        <div class="element-detail-panel" id="element-detail-panel">
+          <div class="element-detail-title" id="element-detail-title"></div>
+          <div class="element-detail-desc" id="element-detail-desc"></div>
+          <div class="element-detail-meta" id="element-detail-meta"></div>
+          <div class="element-injection" id="element-injection"></div>
         </div>
       </div>
       
@@ -1710,6 +1747,81 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           }).join('');
           return agents;
         });
+    }
+    
+    var elementsCache = [];
+    var selectedElement = null;
+    
+    function loadElements() {
+      return fetch(API + '/elements', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          elementsCache = data.elements || [];
+          renderElementGrid(elementsCache);
+          return elementsCache;
+        })
+        .catch(function(err) {
+          console.error('Failed to load elements:', err);
+        });
+    }
+    
+    function renderElementGrid(elements) {
+      var grid = document.getElementById('element-grid');
+      if (!grid) return;
+      
+      grid.innerHTML = elements.map(function(el) {
+        var agentLabel = el.agentName ? el.agentName : '<span style="color: var(--silver);">—</span>';
+        var compressionColor = {
+          'T1': '#7c9ab8',  // Steel Blue
+          'T2': '#d4a853',  // Amber
+          'T3': '#b87c5c'   // Dusty Terracotta
+        };
+        var bgColor = compressionColor[el.compression] || '#6b7a8f';
+        
+        return '<div class="element-cell" data-position="' + el.position + '" onclick="selectElement(' + el.position + ')">' +
+          '<span class="element-position">' + el.position + '</span>' +
+          '<span class="element-color" style="background: ' + bgColor + ';"></span>' +
+          '<div class="element-name">' + el.name + '</div>' +
+          '<div class="element-dof">' + el.dof + '</div>' +
+          '<div class="element-agent">' + agentLabel + '</div>' +
+        '</div>';
+      }).join('');
+    }
+    
+    function selectElement(position) {
+      var element = elementsCache.find(function(e) { return e.position === position; });
+      if (!element) return;
+      
+      selectedElement = element;
+      
+      // Highlight selected cell
+      document.querySelectorAll('.element-cell').forEach(function(cell) {
+        cell.classList.remove('selected');
+        if (parseInt(cell.dataset.position) === position) {
+          cell.classList.add('selected');
+        }
+      });
+      
+      // Show detail panel
+      var panel = document.getElementById('element-detail-panel');
+      var complement = elementsCache.find(function(e) { return e.position === element.complement; });
+      
+      document.getElementById('element-detail-title').innerHTML = 
+        '<span class="element-color" style="background: ' + element.color + '; width: 16px; height: 16px;"></span> ' +
+        'Position ' + element.position + ': ' + element.name + ' (' + element.dof + ')';
+      
+      document.getElementById('element-detail-desc').textContent = element.description;
+      
+      document.getElementById('element-detail-meta').innerHTML = 
+        'Polarity: <strong>' + element.polarity + '</strong> | ' +
+        'Compression: <strong>' + element.compression + '</strong> | ' +
+        'Complement: <strong>Position ' + element.complement + '</strong>' + 
+        (complement ? ' — ' + complement.name : '');
+      
+      document.getElementById('element-injection').innerHTML = 
+        '<strong>Hidden Injection:</strong><br>' + element.injection;
+      
+      panel.classList.add('active');
     }
     
     var councilTimerInterval = null;
@@ -4050,7 +4162,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     document.getElementById('alcove-input').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAlcove(); } });
     document.getElementById('convene-topic').addEventListener('keydown', function(e) { if (e.key === 'Enter') createSanctum(); });
     document.getElementById('mentor-input').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendToMentor(); } });
-    loadAgents().then(function() { loadSanctum(); populateFirstSpeakerSelect(); populateResonanceDropdown(); loadAgentResonance(); populatePhantomDropdown(); });
+    loadAgents().then(function() { loadSanctum(); populateFirstSpeakerSelect(); populateResonanceDropdown(); loadAgentResonance(); populatePhantomDropdown(); loadElements(); });
     checkInboxBadge();
     
     // Spectrum bar - health monitoring
