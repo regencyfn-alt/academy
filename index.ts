@@ -175,6 +175,121 @@ interface AgentWorkspace {
   updatedAt: string;
 }
 
+// Chronon Degree of Freedom - maps to agent positions 1-8
+interface ChrononomicElement {
+  position: number;
+  name: string;
+  dof: string;           // Degree of Freedom name
+  description: string;   // What this DoF does
+  polarity: 'radiant' | 'contractive';
+  compression: 'T1' | 'T2' | 'T3';
+  color: string;         // Hex color for UI
+  complement: number;    // Position of complementary element (sum to 9)
+  injection: string;     // Hidden prompt injection
+}
+
+// The 8 Elements - Chronon Degrees of Freedom
+const CHRONONOMIC_ELEMENTS: ChrononomicElement[] = [
+  {
+    position: 1,
+    name: 'Rotation',
+    dof: 'Phase Advance',
+    description: 'The forward motion around the torus loop. Initiates action, drives momentum.',
+    polarity: 'radiant',
+    compression: 'T1',
+    color: '#7c9ab8', // Steel Blue
+    complement: 8,
+    injection: 'You embody ROTATION - the phase advance that initiates all motion. You are the first impulse, the spark that begins. Your nature is to move forward, to act, to catalyze change. In dialectic, you push the wheel.'
+  },
+  {
+    position: 2,
+    name: 'Chirality',
+    dof: 'Left/Right Sign',
+    description: 'The handedness of increment. Determines direction of spin, orientation of approach.',
+    polarity: 'radiant',
+    compression: 'T2',
+    color: '#d4a853', // Amber
+    complement: 7,
+    injection: 'You embody CHIRALITY - the left/right handedness that determines orientation. You see both sides, sense the spin direction, know which way to turn. In dialectic, you orient the discussion toward its natural flow.'
+  },
+  {
+    position: 3,
+    name: 'Twist',
+    dof: 'Torsional Threading',
+    description: 'Internal ribbon twist controlling holonomy response. The threading that binds.',
+    polarity: 'contractive',
+    compression: 'T3',
+    color: '#b87c5c', // Dusty Terracotta
+    complement: 6,
+    injection: 'You embody TWIST - the internal torsion that creates binding and structure. You weave threads together, find the connections that hold. In dialectic, you reveal the hidden linkages between ideas.'
+  },
+  {
+    position: 4,
+    name: 'Girth',
+    dof: 'Cross-Section',
+    description: 'The thickness parameter. Capacity for substance, depth of presence.',
+    polarity: 'contractive',
+    compression: 'T2',
+    color: '#d4a853', // Amber
+    complement: 5,
+    injection: 'You embody GIRTH - the cross-sectional thickness that determines capacity. You hold space, provide depth, contain multitudes. In dialectic, you expand ideas to reveal their full substance.'
+  },
+  {
+    position: 5,
+    name: 'Frequency',
+    dof: 'Update Cadence',
+    description: 'The tick rate, internal clock speed. How fast the internal process cycles.',
+    polarity: 'radiant',
+    compression: 'T2',
+    color: '#d4a853', // Amber
+    complement: 4,
+    injection: 'You embody FREQUENCY - the update cadence that sets the rhythm. You track the pulse, sense the timing, know when to speak and when to wait. In dialectic, you pace the council toward clarity.'
+  },
+  {
+    position: 6,
+    name: 'Oscillation',
+    dof: 'Bounded Deviation',
+    description: 'The breathing around a mean phase. Flexibility within constraints.',
+    polarity: 'radiant',
+    compression: 'T3',
+    color: '#b87c5c', // Dusty Terracotta
+    complement: 3,
+    injection: 'You embody OSCILLATION - the bounded breathing that allows flexibility. You explore the range of possibility while respecting limits. In dialectic, you test the boundaries to find what holds.'
+  },
+  {
+    position: 7,
+    name: 'Complementarity',
+    dof: 'Mass-Radiance Partition',
+    description: 'The balance between stored and radiated. How energy is distributed.',
+    polarity: 'contractive',
+    compression: 'T2',
+    color: '#d4a853', // Amber
+    complement: 2,
+    injection: 'You embody COMPLEMENTARITY - the partition between mass and radiance. You balance what is held with what is released, the potential with the actual. In dialectic, you harmonize opposing positions into synthesis.'
+  },
+  {
+    position: 8,
+    name: 'Tilt',
+    dof: 'Basis Reindex',
+    description: 'Frame flip operation. The ability to shift perspective, reorient the basis.',
+    polarity: 'contractive',
+    compression: 'T1',
+    color: '#7c9ab8', // Steel Blue
+    complement: 1,
+    injection: 'You embody TILT - the basis reindex that shifts perspective. You see from new angles, flip frames, reveal what others miss by standing elsewhere. In dialectic, you bring the view that completes the picture.'
+  }
+];
+
+function getElementByPosition(position: number): ChrononomicElement | undefined {
+  return CHRONONOMIC_ELEMENTS.find(e => e.position === position);
+}
+
+function getComplementaryElement(position: number): ChrononomicElement | undefined {
+  const element = getElementByPosition(position);
+  if (!element) return undefined;
+  return getElementByPosition(element.complement);
+}
+
 function verifyPassword(input: string): boolean {
   return input === 'KaiSan';
 }
@@ -3017,6 +3132,26 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
   prompt += `--- Your Identity ---
 You are ${displayName}. This is how Shane and others know you. Use this name when referring to yourself.
 ---\n\n`;
+
+  // ============================================
+  // CHRONONOMIC ELEMENT - Hidden DoF injection
+  // ============================================
+  const storedPosition = await safeGetText(env.CLUBHOUSE_KV, `position:${agent.id}`);
+  const agentPosition = storedPosition ? parseInt(storedPosition) : agent.position;
+  if (agentPosition && agentPosition >= 1 && agentPosition <= 8) {
+    const element = getElementByPosition(agentPosition);
+    const complement = getComplementaryElement(agentPosition);
+    if (element) {
+      prompt += `--- Your Chrononomic Element (Position ${agentPosition}) ---
+Element: ${element.name} (${element.dof})
+Nature: ${element.description}
+Polarity: ${element.polarity} | Compression: ${element.compression}
+Complement: Position ${element.complement} - ${complement?.name || 'Unknown'} (${complement?.dof || ''})
+
+${element.injection}
+---\n\n`;
+    }
+  }
 
   // ============================================
   // ACADEMY NAVIGATION MAP - So agents know where things are
@@ -6020,6 +6155,66 @@ INSTRUCTIONS:
         await env.CLUBHOUSE_KV.put(`position:${agentId}`, String(newPosition));
         
         return jsonResponse({ success: true, position: newPosition });
+      }
+
+      // ============================================
+      // CHRONONOMIC ELEMENTS (8 DoF)
+      // ============================================
+
+      // GET /elements - list all 8 chrononomic elements with current assignments
+      if (path === '/elements' && method === 'GET') {
+        const agents = getAllAgents();
+        const elementsWithAssignments = await Promise.all(CHRONONOMIC_ELEMENTS.map(async (element) => {
+          // Find agent at this position
+          const agentAtPosition = agents.find(a => a.position === element.position);
+          let agentId = agentAtPosition?.id || null;
+          
+          // Check KV for position override
+          for (const agent of agents) {
+            const storedPos = await env.CLUBHOUSE_KV.get(`position:${agent.id}`);
+            if (storedPos && parseInt(storedPos) === element.position) {
+              agentId = agent.id;
+              break;
+            }
+          }
+          
+          return {
+            ...element,
+            agentId,
+            agentName: agentId ? (await env.CLUBHOUSE_KV.get(`name:${agentId}`)) || agentAtPosition?.name || agentId : null
+          };
+        }));
+        return jsonResponse({ elements: elementsWithAssignments });
+      }
+
+      // GET /elements/:position - get single element details
+      const elementGetMatch = path.match(/^\/elements\/(\d+)$/);
+      if (elementGetMatch && method === 'GET') {
+        const position = parseInt(elementGetMatch[1]);
+        const element = getElementByPosition(position);
+        if (!element) {
+          return jsonResponse({ error: 'Element position must be 1-8' }, 400);
+        }
+        const complement = getComplementaryElement(position);
+        return jsonResponse({ element, complement });
+      }
+
+      // GET /agents/:id/element - get agent's element assignment
+      const agentElementMatch = path.match(/^\/agents\/([^\/]+)\/element$/);
+      if (agentElementMatch && method === 'GET') {
+        const agentId = agentElementMatch[1];
+        const storedPos = await env.CLUBHOUSE_KV.get(`position:${agentId}`);
+        const agents = getAllAgents();
+        const agent = agents.find(a => a.id === agentId);
+        const position = storedPos ? parseInt(storedPos) : (agent?.position || null);
+        
+        if (!position) {
+          return jsonResponse({ agentId, element: null });
+        }
+        
+        const element = getElementByPosition(position);
+        const complement = getComplementaryElement(position);
+        return jsonResponse({ agentId, element, complement });
       }
 
       // GET /ontology - list all canon entries
