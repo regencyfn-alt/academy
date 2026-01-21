@@ -3690,6 +3690,30 @@ export default {
       }
 
       // ============================================
+      // DEBUG ENDPOINTS
+      // ============================================
+
+      // GET /debug/scratchpad/:agentId - Inspect scratchpad
+      const debugScratchpadMatch = path.match(/^\/debug\/scratchpad\/([^/]+)$/);
+      if (debugScratchpadMatch && method === 'GET') {
+        const agentId = debugScratchpadMatch[1];
+        const data = await env.CLUBHOUSE_KV.get(`scratchpad:${agentId}`);
+        return jsonResponse({ 
+          agentId, 
+          data: data ? JSON.parse(data) : null, 
+          size: data?.length || 0,
+          entries: data ? JSON.parse(data).length : 0
+        });
+      }
+
+      // DELETE /debug/scratchpad/:agentId - Clear scratchpad
+      if (debugScratchpadMatch && method === 'DELETE') {
+        const agentId = debugScratchpadMatch[1];
+        await env.CLUBHOUSE_KV.delete(`scratchpad:${agentId}`);
+        return jsonResponse({ cleared: agentId });
+      }
+
+      // ============================================
       // EXISTING ROUTES
       // ============================================
 
