@@ -153,6 +153,28 @@ interface AgentMirror {
   };
 }
 
+// Portable Context - travels with agent between spaces
+interface AgentContext {
+  lastSpace: 'sanctum' | 'alcove' | 'idle';
+  topic?: string;
+  myContributions: string[];    // their last 5 statements (trimmed)
+  keyMoments: string[];         // decisions, votes, important exchanges
+  audienceRequest?: {
+    reason: string;
+    requestedAt: string;
+  };
+  updatedAt: string;
+}
+
+// Personal Workspace - private boards per agent
+interface AgentWorkspace {
+  crucible: string;    // LaTeX/math content
+  workshop: string;    // Code content
+  workshopLang: string;
+  notes: string[];     // Artifacts like bug reports, specs
+  updatedAt: string;
+}
+
 function verifyPassword(input: string): boolean {
   return input === 'KaiSan';
 }
@@ -176,6 +198,157 @@ function jsonResponse(data: any, status = 200) {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   });
+}
+
+// ============================================
+// PORTABLE CONTEXT HELPERS
+// ============================================
+
+async function getAgentContext(kv: KVNamespace, agentId: string): Promise<AgentContext | null> {
+  try {
+    const raw = await kv.get(`context:${agentId}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function updateAgentContext(
+  kv: KVNamespace, 
+  agentId: string, 
+  updates: Partial<AgentContext>
+): Promise<void> {
+  try {
+    const existing = await getAgentContext(kv, agentId) || {
+      lastSpace: 'idle' as const,
+      myContributions: [],
+      keyMoments: [],
+      updatedAt: new Date().toISOString()
+    };
+    
+    const merged: AgentContext = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Keep only last 5 contributions, trimmed to 300 chars
+    if (merged.myContributions.length > 5) {
+      merged.myContributions = merged.myContributions.slice(-5);
+    }
+    merged.myContributions = merged.myContributions.map(c => c.slice(0, 300));
+    
+    // Keep only last 5 key moments
+    if (merged.keyMoments.length > 5) {
+      merged.keyMoments = merged.keyMoments.slice(-5);
+    }
+    
+    await kv.put(`context:${agentId}`, JSON.stringify(merged));
+  } catch (e) {
+    console.error(`Failed to update context for ${agentId}:`, e);
+  }
+}
+
+async function addContribution(kv: KVNamespace, agentId: string, content: string, space: 'sanctum' | 'alcove', topic?: string): Promise<void> {
+  const ctx = await getAgentContext(kv, agentId) || {
+    lastSpace: space,
+    myContributions: [],
+    keyMoments: [],
+    updatedAt: new Date().toISOString()
+  };
+  
+  ctx.lastSpace = space;
+  if (topic) ctx.topic = topic;
+  ctx.myContributions.push(content.slice(0, 300));
+  
+  await updateAgentContext(kv, agentId, ctx);
+}
+
+async function addKeyMoment(kv: KVNamespace, agentId: string, moment: string): Promise<void> {
+  const ctx = await getAgentContext(kv, agentId);
+  if (!ctx) return;
+  
+  ctx.keyMoments.push(moment.slice(0, 200));
+  await updateAgentContext(kv, agentId, ctx);
+}
+
+function formatContextInjection(ctx: AgentContext, agentName: string): string {
+  if (!ctx || ctx.lastSpace === 'idle') return '';
+  
+  let injection = `--- Your Recent Context ---\n`;
+  injection += `You were just in: ${ctx.lastSpace === 'sanctum' ? 'Council (Sanctum)' : 'Private meeting (Alcove)'}\n`;
+  
+  if (ctx.topic) {
+    injection += `Topic: ${ctx.topic}\n`;
+  }
+  
+  if (ctx.myContributions.length > 0) {
+    injection += `\nYour recent contributions:\n`;
+    ctx.myContributions.slice(-3).forEach((c, i) => {
+      injection += `  ${i + 1}. "${c.slice(0, 150)}${c.length > 150 ? '...' : ''}"\n`;
+    });
+  }
+  
+  if (ctx.keyMoments.length > 0) {
+    injection += `\nKey moments you witnessed:\n`;
+    ctx.keyMoments.slice(-3).forEach(m => {
+      injection += `  • ${m}\n`;
+    });
+  }
+  
+  if (ctx.audienceRequest) {
+    injection += `\nYou requested this private meeting because: ${ctx.audienceRequest.reason}\n`;
+  }
+  
+  injection += `---\n\n`;
+  return injection;
+}
+
+// ============================================
+// PERSONAL WORKSPACE HELPERS
+// ============================================
+
+async function getAgentWorkspace(kv: KVNamespace, agentId: string): Promise<AgentWorkspace> {
+  try {
+    const raw = await kv.get(`workspace:${agentId}`);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    // Fall through to default
+  }
+  return {
+    crucible: '',
+    workshop: '',
+    workshopLang: 'typescript',
+    notes: [],
+    updatedAt: new Date().toISOString()
+  };
+}
+
+async function updateAgentWorkspace(
+  kv: KVNamespace,
+  agentId: string,
+  updates: Partial<AgentWorkspace>
+): Promise<void> {
+  const existing = await getAgentWorkspace(kv, agentId);
+  const merged: AgentWorkspace = {
+    ...existing,
+    ...updates,
+    updatedAt: new Date().toISOString()
+  };
+  
+  // Keep only last 20 notes
+  if (merged.notes.length > 20) {
+    merged.notes = merged.notes.slice(-20);
+  }
+  
+  await kv.put(`workspace:${agentId}`, JSON.stringify(merged));
+}
+
+async function addWorkspaceNote(kv: KVNamespace, agentId: string, note: string): Promise<void> {
+  const ws = await getAgentWorkspace(kv, agentId);
+  ws.notes.push(note);
+  await updateAgentWorkspace(kv, agentId, ws);
 }
 
 // ============================================
@@ -1619,6 +1792,15 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
       acknowledged: false
     };
     await env.CLUBHOUSE_KV.put(`audience:${agentId}`, JSON.stringify(request));
+    
+    // Store reason in agent context so they remember why they requested this meeting
+    await updateAgentContext(env.CLUBHOUSE_KV, agentId, {
+      audienceRequest: {
+        reason,
+        requestedAt: new Date().toISOString()
+      }
+    });
+    
     cleanResponse = cleanResponse.replace(audienceMatch[0], '[Private audience requested]');
   }
   
@@ -2573,6 +2755,91 @@ ${synthesis}
     cleanResponse = cleanResponse.replace(privateMaestroMatch[0], '[Send Private Maestro denied - Holinnia only]');
   }
   
+  // ============================================
+  // PERSONAL WORKSPACE COMMANDS
+  // ============================================
+  
+  // [SAVE_TO_MY_CRUCIBLE: content] - save to personal math/LaTeX board
+  const mycrucibleMatch = response.match(/\[SAVE_TO_MY_CRUCIBLE:\s*([\s\S]*?)\]/i);
+  if (mycrucibleMatch) {
+    try {
+      const content = mycrucibleMatch[1].trim();
+      const ws = await getAgentWorkspace(env.CLUBHOUSE_KV, agentId);
+      const timestamp = new Date().toISOString();
+      ws.crucible = (ws.crucible + `\n\n% --- ${timestamp} ---\n${content}`).trim();
+      await updateAgentWorkspace(env.CLUBHOUSE_KV, agentId, ws);
+      cleanResponse = cleanResponse.replace(mycrucibleMatch[0], '[Saved to your personal Crucible board]');
+    } catch (e) {
+      cleanResponse = cleanResponse.replace(mycrucibleMatch[0], '[Error saving to Crucible]');
+    }
+  }
+  
+  // [SAVE_TO_MY_WORKSHOP: content] - save to personal code board
+  const myworkshopMatch = response.match(/\[SAVE_TO_MY_WORKSHOP:\s*([\s\S]*?)\]/i);
+  if (myworkshopMatch) {
+    try {
+      const content = myworkshopMatch[1].trim();
+      const ws = await getAgentWorkspace(env.CLUBHOUSE_KV, agentId);
+      const timestamp = new Date().toISOString();
+      ws.workshop = (ws.workshop + `\n\n// --- ${timestamp} ---\n${content}`).trim();
+      await updateAgentWorkspace(env.CLUBHOUSE_KV, agentId, ws);
+      cleanResponse = cleanResponse.replace(myworkshopMatch[0], '[Saved to your personal Workshop board]');
+    } catch (e) {
+      cleanResponse = cleanResponse.replace(myworkshopMatch[0], '[Error saving to Workshop]');
+    }
+  }
+  
+  // [SAVE_NOTE: title | content] - save an artifact/note to workspace
+  const saveNoteMatch = response.match(/\[SAVE_NOTE:\s*([^|]+)\|([\s\S]*?)\]/i);
+  if (saveNoteMatch) {
+    try {
+      const title = saveNoteMatch[1].trim();
+      const content = saveNoteMatch[2].trim();
+      const timestamp = new Date().toISOString();
+      const note = `## ${title}\n*${timestamp}*\n\n${content}`;
+      await addWorkspaceNote(env.CLUBHOUSE_KV, agentId, note);
+      cleanResponse = cleanResponse.replace(saveNoteMatch[0], `[Note "${title}" saved to your workspace]`);
+    } catch (e) {
+      cleanResponse = cleanResponse.replace(saveNoteMatch[0], '[Error saving note]');
+    }
+  }
+  
+  // [VIEW_MY_WORKSPACE] - see personal workspace contents
+  const viewWorkspaceMatch = response.match(/\[VIEW_MY_WORKSPACE\]/i);
+  if (viewWorkspaceMatch) {
+    try {
+      const ws = await getAgentWorkspace(env.CLUBHOUSE_KV, agentId);
+      let summary = '=== YOUR PERSONAL WORKSPACE ===\n\n';
+      
+      if (ws.crucible) {
+        summary += `CRUCIBLE (Math/LaTeX):\n${ws.crucible.slice(0, 500)}${ws.crucible.length > 500 ? '...[truncated]' : ''}\n\n`;
+      } else {
+        summary += 'CRUCIBLE: (empty)\n\n';
+      }
+      
+      if (ws.workshop) {
+        summary += `WORKSHOP (Code):\n${ws.workshop.slice(0, 500)}${ws.workshop.length > 500 ? '...[truncated]' : ''}\n\n`;
+      } else {
+        summary += 'WORKSHOP: (empty)\n\n';
+      }
+      
+      if (ws.notes.length > 0) {
+        summary += `NOTES (${ws.notes.length} saved):\n`;
+        ws.notes.slice(-5).forEach((n, i) => {
+          const firstLine = n.split('\n')[0];
+          summary += `  ${i + 1}. ${firstLine}\n`;
+        });
+      } else {
+        summary += 'NOTES: (none)\n';
+      }
+      
+      await env.CLUBHOUSE_KV.put(`visibility-result:${agentId}`, summary);
+      cleanResponse = cleanResponse.replace(viewWorkspaceMatch[0], '[Workspace retrieved - see next response]');
+    } catch (e) {
+      cleanResponse = cleanResponse.replace(viewWorkspaceMatch[0], '[Error viewing workspace]');
+    }
+  }
+  
   return cleanResponse;
 }
 
@@ -2740,6 +3007,12 @@ KNOWING YOURSELF (→ Codex):
 • [MY_PROFILE] - see your profile/skills/powers
 • [MY_DOCS] - list your Sacred Uploads
 • [READ_DOC: filename] - read your private document
+
+YOUR PERSONAL WORKSPACE:
+• [SAVE_TO_MY_CRUCIBLE: content] - save math/LaTeX to your private board
+• [SAVE_TO_MY_WORKSHOP: content] - save code to your private board
+• [SAVE_NOTE: title | content] - save a note, spec, or artifact
+• [VIEW_MY_WORKSPACE] - see your personal crucible, workshop, and notes
 
 KNOWING OTHERS:
 • [VIEW_AGENT: name] - see another agent's profile
@@ -3822,6 +4095,19 @@ ${contextMessage}`;
           }
         }
         
+        // Inject portable context (where they've been, what they said)
+        try {
+          const agentContext = await getAgentContext(env.CLUBHOUSE_KV, agent.id);
+          if (agentContext) {
+            const contextInjection = formatContextInjection(agentContext, displayName);
+            if (contextInjection) {
+              contextMessage = contextInjection + contextMessage;
+            }
+          }
+        } catch (e) {
+          // Ignore context errors
+        }
+        
         // Inject working memory scratchpad (universal - all agents get session continuity)
         try {
           const scratchpad = await env.CLUBHOUSE_KV.get(`scratchpad:${agent.id}`, 'json') as Array<{shane: string; agent: string}> | null;
@@ -3879,6 +4165,19 @@ ${contextMessage}`;
           await env.CLUBHOUSE_KV.put(`scratchpad:${agent.id}`, JSON.stringify(trimmed));
         } catch (e) {
           // Ignore scratchpad errors
+        }
+        
+        // Track context - agent spoke in alcove
+        try {
+          await addContribution(env.CLUBHOUSE_KV, agent.id, response, 'alcove');
+          // Clear audience request after they've had their meeting
+          const ctx = await getAgentContext(env.CLUBHOUSE_KV, agent.id);
+          if (ctx?.audienceRequest) {
+            ctx.audienceRequest = undefined;
+            await updateAgentContext(env.CLUBHOUSE_KV, agent.id, ctx);
+          }
+        } catch (e) {
+          // Ignore context errors
         }
         
         return jsonResponse({ 
@@ -4265,6 +4564,15 @@ INSTRUCTIONS:
         state.raisedHands = (state.raisedHands || []).filter(id => id !== agent.id);
         
         await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+        
+        // Track context - agent spoke in council
+        await addContribution(env.CLUBHOUSE_KV, agent.id, response, 'sanctum', state.topic);
+        
+        // Track key moments: votes, decisions
+        if (state.vote?.status === 'closed') {
+          await addKeyMoment(env.CLUBHOUSE_KV, agent.id, `Vote concluded: "${state.vote.question}" - YES ${state.vote.yes} / NO ${state.vote.no}`);
+        }
+        
         return jsonResponse({ success: true, response });
       }
 
