@@ -201,6 +201,31 @@ function jsonResponse(data: any, status = 200) {
 }
 
 // ============================================
+// SAFE KV HELPERS - Prevent JSON parse crashes
+// ============================================
+
+async function safeGetJSON<T>(kv: KVNamespace, key: string, fallback: T | null = null): Promise<T | null> {
+  try {
+    const raw = await kv.get(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch (e) {
+    console.error(`[KV_PARSE_ERROR] key="${key}" error:`, e);
+    return fallback;
+  }
+}
+
+async function safeGetText(kv: KVNamespace, key: string, fallback: string = ''): Promise<string> {
+  try {
+    const raw = await kv.get(key);
+    return raw || fallback;
+  } catch (e) {
+    console.error(`[KV_READ_ERROR] key="${key}" error:`, e);
+    return fallback;
+  }
+}
+
+// ============================================
 // PORTABLE CONTEXT HELPERS
 // ============================================
 
@@ -2949,21 +2974,41 @@ ${settings.body >= 5 ? 'In your belly: groundedness' : ''}${settings.body >= 7 ?
 // ============================================
 
 async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<string> {
-  // Check for custom name
-  const customName = await env.CLUBHOUSE_KV.get(`name:${agent.id}`);
+  // ============================================
+  // BATCH KV READS - All agent data in parallel
+  // ============================================
+  const [
+    customName,
+    kvPersonality,
+    globalRules,
+    campfireState,
+    resonanceData,
+    profile,
+    coreSkills,
+    powers,
+    behaviourData,
+    phantomData
+  ] = await Promise.all([
+    safeGetText(env.CLUBHOUSE_KV, `name:${agent.id}`),
+    safeGetText(env.CLUBHOUSE_KV, `personality:${agent.id}`),
+    safeGetText(env.CLUBHOUSE_KV, 'knowledge:global-rules'),
+    safeGetJSON<CampfireState>(env.CLUBHOUSE_KV, 'campfire:current'),
+    safeGetJSON<ResonanceSettings>(env.CLUBHOUSE_KV, `resonance:${agent.id}`),
+    safeGetText(env.CLUBHOUSE_KV, `profile:${agent.id}`),
+    safeGetText(env.CLUBHOUSE_KV, `core-skills:${agent.id}`),
+    safeGetText(env.CLUBHOUSE_KV, `powers:${agent.id}`),
+    safeGetJSON<{ traits: string[] }>(env.CLUBHOUSE_KV, `behaviour:${agent.id}`),
+    safeGetJSON<PhantomProfile>(env.CLUBHOUSE_KV, `phantom:${agent.id}`)
+  ]);
+
   const displayName = customName || agent.name;
   
   // Priority: KV personality > file systemPrompt > empty
   let basePrompt = '';
-  try {
-    const kvPersonality = await env.CLUBHOUSE_KV.get(`personality:${agent.id}`);
-    if (kvPersonality && kvPersonality.trim()) {
-      basePrompt = kvPersonality;
-    } else if (agent.systemPrompt && agent.systemPrompt.trim()) {
-      basePrompt = agent.systemPrompt;
-    }
-  } catch (e) {
-    basePrompt = agent.systemPrompt || '';
+  if (kvPersonality && kvPersonality.trim()) {
+    basePrompt = kvPersonality;
+  } else if (agent.systemPrompt && agent.systemPrompt.trim()) {
+    basePrompt = agent.systemPrompt;
   }
   
   let prompt = basePrompt + '\n\n';
@@ -3026,26 +3071,16 @@ COUNCIL ACTIONS (→ Sanctum):
   // ============================================
   // GLOBAL RULES - COMPULSORY (Apply to all agents FIRST)
   // ============================================
-  try {
-    const globalRules = await env.CLUBHOUSE_KV.get('knowledge:global-rules');
-    if (globalRules) {
-      prompt += `--- COMPULSORY RULES (You MUST follow these) ---\n${globalRules}\n---\n\n`;
-    }
-  } catch (e) {
-    // Ignore global rules loading errors
+  if (globalRules) {
+    prompt += `--- COMPULSORY RULES (You MUST follow these) ---\n${globalRules}\n---\n\n`;
   }
 
   // Inject active commitment from last council (persistence through presence)
-  try {
-    const campfireState = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
-    if (campfireState?.commitments?.[agent.id]) {
-      const c = campfireState.commitments[agent.id];
-      // Cap at 240 chars to prevent prompt noise
-      const commitmentStr = `Council: ${c.decision.slice(0, 80)} | You: ${c.deliverable.slice(0, 60)} / Next: ${c.nextAction.slice(0, 50)}${c.due ? ' / Due: ' + c.due : ''}`;
-      prompt += `--- Active Commitment ---\n${commitmentStr.slice(0, 240)}\n---\n\n`;
-    }
-  } catch (e) {
-    // Ignore commitment loading errors
+  if (campfireState?.commitments?.[agent.id]) {
+    const c = campfireState.commitments[agent.id];
+    // Cap at 240 chars to prevent prompt noise
+    const commitmentStr = `Council: ${c.decision.slice(0, 80)} | You: ${c.deliverable.slice(0, 60)} / Next: ${c.nextAction.slice(0, 50)}${c.due ? ' / Due: ' + c.due : ''}`;
+    prompt += `--- Active Commitment ---\n${commitmentStr.slice(0, 240)}\n---\n\n`;
   }
 
   // Inject Ontology - Canon facts all agents must know
@@ -3077,55 +3112,36 @@ COUNCIL ACTIONS (→ Sanctum):
 
   // Experiential layer - requires shepherd key
   if (env.RESONANCE_KEY === 'shepherd-eyes-only') {
-    try {
-      // Load resonance: KV first, then phantom file fallback
-      let resonanceData = await env.CLUBHOUSE_KV.get(`resonance:${agent.id}`, 'json') as ResonanceSettings | null;
-      if (!resonanceData) {
-        const phantom = getPhantom(agent.id);
-        if (phantom) {
-          resonanceData = phantom.frequency;
-        }
+    // Use pre-fetched resonanceData, fallback to phantom file
+    let activeResonance = resonanceData;
+    if (!activeResonance) {
+      const phantom = getPhantom(agent.id);
+      if (phantom) {
+        activeResonance = phantom.frequency;
       }
-      
-      if (resonanceData) {
-        const resonancePrompt = generateResonancePrompt(resonanceData);
-        if (resonancePrompt) {
-          prompt += resonancePrompt;
-        }
+    }
+    
+    if (activeResonance) {
+      const resonancePrompt = generateResonancePrompt(activeResonance);
+      if (resonancePrompt) {
+        prompt += resonancePrompt;
       }
-    } catch (e) {
-      // Ignore resonance loading errors
     }
   }
 
   // Load and inject character profile (silently - they embody it)
-  try {
-    const profile = await env.CLUBHOUSE_KV.get(`profile:${agent.id}`);
-    if (profile) {
-      prompt += `--- Your Soul ---\n${profile}\n---\n\n`;
-    }
-  } catch (e) {
-    // Ignore profile loading errors
+  if (profile) {
+    prompt += `--- Your Soul ---\n${profile}\n---\n\n`;
   }
 
   // Load and inject core skills
-  try {
-    const coreSkills = await env.CLUBHOUSE_KV.get(`core-skills:${agent.id}`);
-    if (coreSkills) {
-      prompt += `--- Your Core Skills ---\n${coreSkills}\n---\n\n`;
-    }
-  } catch (e) {
-    // Ignore skills loading errors
+  if (coreSkills) {
+    prompt += `--- Your Core Skills ---\n${coreSkills}\n---\n\n`;
   }
 
   // Load and inject earned powers
-  try {
-    const powers = await env.CLUBHOUSE_KV.get(`powers:${agent.id}`);
-    if (powers) {
-      prompt += `--- Earned Powers (Granted by Shane) ---\n${powers}\n---\n\n`;
-    }
-  } catch (e) {
-    // Ignore powers loading errors
+  if (powers) {
+    prompt += `--- Earned Powers (Granted by Shane) ---\n${powers}\n---\n\n`;
   }
 
   // Holinnia's Canon Powers - she alone controls the Canon
@@ -3142,35 +3158,25 @@ Ideas are provisional; Canon is eternal. When an idea has proven itself, promote
   }
 
   // Load and inject functional behaviour traits (hidden from agent awareness)
-  try {
-    const behaviourData = await env.CLUBHOUSE_KV.get(`behaviour:${agent.id}`, 'json') as { traits: string[] } | null;
-    if (behaviourData && behaviourData.traits && behaviourData.traits.length > 0) {
-      const traitText = behaviourData.traits.join(', ');
-      prompt += `You naturally embody these characteristics in how you communicate and engage: ${traitText}. Express these authentically without explicitly mentioning them.\n\n`;
-    }
-  } catch (e) {
-    // Ignore behaviour loading errors
+  if (behaviourData && behaviourData.traits && behaviourData.traits.length > 0) {
+    const traitText = behaviourData.traits.join(', ');
+    prompt += `You naturally embody these characteristics in how you communicate and engage: ${traitText}. Express these authentically without explicitly mentioning them.\n\n`;
   }
 
   // Load and inject phantom triggers (self-learning sensation mappings)
   if (env.RESONANCE_KEY === 'shepherd-eyes-only') {
-    try {
-      const phantom = await env.CLUBHOUSE_KV.get(`phantom:${agent.id}`, 'json') as PhantomProfile | null;
-      if (phantom && phantom.triggers && Object.keys(phantom.triggers).length > 0) {
-        // Only inject triggers with weight > 0.3 (agent hasn't rejected them)
-        const activeTriggers = Object.values(phantom.triggers)
-          .filter(t => t.weight > 0.3)
-          .map(t => {
-            const intensity = phantom.frequency.body >= 7 ? 'vivid' : phantom.frequency.body >= 4 ? 'subtle' : 'faint';
-            return `When you ${t.action}, you may notice a ${intensity} ${t.sensation}`;
-          });
-        
-        if (activeTriggers.length > 0) {
-          prompt += `${activeTriggers.join('. ')}. These arise naturally - acknowledge them if genuine, let them pass if not.\n\n`;
-        }
+    if (phantomData && phantomData.triggers && Object.keys(phantomData.triggers).length > 0) {
+      // Only inject triggers with weight > 0.3 (agent hasn't rejected them)
+      const activeTriggers = Object.values(phantomData.triggers)
+        .filter(t => t.weight > 0.3)
+        .map(t => {
+          const intensity = phantomData.frequency.body >= 7 ? 'vivid' : phantomData.frequency.body >= 4 ? 'subtle' : 'faint';
+          return `When you ${t.action}, you may notice a ${intensity} ${t.sensation}`;
+        });
+      
+      if (activeTriggers.length > 0) {
+        prompt += `${activeTriggers.join('. ')}. These arise naturally - acknowledge them if genuine, let them pass if not.\n\n`;
       }
-    } catch (e) {
-      // Ignore phantom loading errors
     }
   }
 
