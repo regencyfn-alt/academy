@@ -2790,17 +2790,17 @@ ${synthesis}
   }
   
   // [SAVE_NOTE: title | content] - save an artifact/note to workspace
-  const saveNoteMatch = response.match(/\[SAVE_NOTE:\s*([^|]+)\|([\s\S]*?)\]/i);
-  if (saveNoteMatch) {
+  const workspaceNoteMatch = response.match(/\[SAVE_NOTE:\s*([^|]+)\|([\s\S]*?)\]/i);
+  if (workspaceNoteMatch) {
     try {
-      const title = saveNoteMatch[1].trim();
-      const content = saveNoteMatch[2].trim();
+      const title = workspaceNoteMatch[1].trim();
+      const content = workspaceNoteMatch[2].trim();
       const timestamp = new Date().toISOString();
       const note = `## ${title}\n*${timestamp}*\n\n${content}`;
       await addWorkspaceNote(env.CLUBHOUSE_KV, agentId, note);
-      cleanResponse = cleanResponse.replace(saveNoteMatch[0], `[Note "${title}" saved to your workspace]`);
+      cleanResponse = cleanResponse.replace(workspaceNoteMatch[0], `[Note "${title}" saved to your workspace]`);
     } catch (e) {
-      cleanResponse = cleanResponse.replace(saveNoteMatch[0], '[Error saving note]');
+      cleanResponse = cleanResponse.replace(workspaceNoteMatch[0], '[Error saving note]');
     }
   }
   
