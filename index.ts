@@ -5727,6 +5727,41 @@ INSTRUCTIONS:
         return jsonResponse({ success: true, moved, remaining: 15 });
       }
 
+      // GET /shared/cold-storage - list cold storage documents
+      if (path === '/shared/cold-storage' && method === 'GET') {
+        const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'cold-storage/shared/' });
+        const documents = list.objects.map(obj => ({
+          filename: obj.key.replace('cold-storage/shared/', ''),
+          uploaded: obj.uploaded
+        }));
+        return jsonResponse({ documents });
+      }
+
+      // GET /shared/cold-storage/:filename - get cold storage document
+      const coldDocMatch = path.match(/^\/shared\/cold-storage\/(.+)$/);
+      if (coldDocMatch && method === 'GET') {
+        const filename = decodeURIComponent(coldDocMatch[1]);
+        const obj = await env.CLUBHOUSE_DOCS.get(`cold-storage/shared/${filename}`);
+        if (!obj) return jsonResponse({ error: 'Not found' }, 404);
+        const content = await obj.text();
+        return jsonResponse({ filename, content });
+      }
+
+      // POST /shared/cold-storage/:filename/restore - restore from cold storage to active
+      if (coldDocMatch && method === 'POST') {
+        const filename = decodeURIComponent(coldDocMatch[1]);
+        const obj = await env.CLUBHOUSE_DOCS.get(`cold-storage/shared/${filename}`);
+        if (!obj) return jsonResponse({ error: 'Not found' }, 404);
+        const content = await obj.text();
+        
+        // Put back in shared
+        await env.CLUBHOUSE_DOCS.put(`shared/${filename}`, content);
+        // Delete from cold storage
+        await env.CLUBHOUSE_DOCS.delete(`cold-storage/shared/${filename}`);
+        
+        return jsonResponse({ success: true, restored: filename });
+      }
+
       // Document routes
       const docListMatch = path.match(/^\/agents\/([^\/]+)\/documents$/);
       if (docListMatch && method === 'GET') {
