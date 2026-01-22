@@ -137,6 +137,12 @@ export const UI_HTML = `<!DOCTYPE html>
     .alcove-select:focus { outline: none; border-color: var(--gold); }
     .alcove-select option { background: var(--deep); color: var(--pearl); }
     
+    /* Voice Input (Speech-to-Text) */
+    .mic-btn { background: transparent; border: 1px solid var(--glass-border); color: var(--silver); padding: 8px 12px; border-radius: 2px; cursor: pointer; transition: all 0.3s ease; font-size: 1.1em; }
+    .mic-btn:hover { border-color: var(--gold); color: var(--gold); }
+    .mic-btn.recording { border-color: #ef4444; color: #ef4444; animation: mic-pulse 1s infinite; background: rgba(239, 68, 68, 0.1); }
+    @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } }
+    
     /* Chamber of 8 - Cinematic Agent Cards */
     .agents-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; padding: 20px; }
 .mentor-mode-panel { padding: 0 20px 20px; }
@@ -656,6 +662,7 @@ export const UI_HTML = `<!DOCTYPE html>
         <div class="image-preview" id="sanctum-image-preview"></div>
         <div class="input-row">
           <textarea id="sanctum-input" placeholder="Speak to the council..."></textarea>
+          <button id="sanctum-mic-btn" class="btn mic-btn" onclick="toggleVoiceInput('sanctum')" title="Voice input">🎤</button>
           <button class="btn btn-secondary image-btn" onclick="document.getElementById('sanctum-image-input').click()">📷</button>
           <input type="file" id="sanctum-image-input" accept="image/png,image/jpeg" style="display:none;">
           <button class="btn btn-secondary image-btn" onclick="document.getElementById('sanctum-text-input').click()">📄</button>
@@ -826,6 +833,7 @@ export const UI_HTML = `<!DOCTYPE html>
         <div class="image-preview" id="alcove-image-preview"></div>
         <div class="input-row">
           <textarea id="alcove-input" placeholder="Your inquiry..."></textarea>
+          <button id="alcove-mic-btn" class="btn mic-btn" onclick="toggleVoiceInput('alcove')" title="Voice input">🎤</button>
           <button class="btn btn-secondary image-btn" onclick="document.getElementById('alcove-image-input').click()">📷</button>
           <input type="file" id="alcove-image-input" accept="image/png,image/jpeg" style="display:none;">
           <button class="btn btn-secondary image-btn" onclick="document.getElementById('alcove-text-input').click()">📄</button>
@@ -1342,6 +1350,124 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       }
     }
     
+    // ============================================
+    // SPEECH-TO-TEXT (Voice Input)
+    // ============================================
+    var speechRecognition = null;
+    var isRecording = false;
+    var currentMicTarget = null;  // 'sanctum' or 'alcove'
+    
+    function initSpeechRecognition() {
+      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.warn('Speech Recognition not supported in this browser');
+        return false;
+      }
+      
+      speechRecognition = new SpeechRecognition();
+      speechRecognition.continuous = false;
+      speechRecognition.interimResults = true;
+      speechRecognition.lang = 'en-US';
+      
+      speechRecognition.onresult = function(event) {
+        var transcript = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        
+        // Update the appropriate input field
+        var inputId = currentMicTarget === 'alcove' ? 'alcove-input' : 'sanctum-input';
+        var inputEl = document.getElementById(inputId);
+        if (inputEl) {
+          inputEl.value = transcript;
+        }
+      };
+      
+      speechRecognition.onend = function() {
+        stopRecording();
+      };
+      
+      speechRecognition.onerror = function(event) {
+        console.error('Speech recognition error:', event.error);
+        stopRecording();
+        if (event.error === 'not-allowed') {
+          showStatus(currentMicTarget + '-status', 'Microphone access denied', 'error');
+        }
+      };
+      
+      return true;
+    }
+    
+    function toggleVoiceInput(target) {
+      currentMicTarget = target;
+      
+      if (isRecording) {
+        stopRecording();
+        return;
+      }
+      
+      // Initialize if needed
+      if (!speechRecognition && !initSpeechRecognition()) {
+        showStatus(target + '-status', 'Voice input not supported in this browser', 'error');
+        return;
+      }
+      
+      startRecording(target);
+    }
+    
+    function startRecording(target) {
+      isRecording = true;
+      
+      // Update button state
+      var btnId = target === 'alcove' ? 'alcove-mic-btn' : 'sanctum-mic-btn';
+      var btn = document.getElementById(btnId);
+      if (btn) {
+        btn.classList.add('recording');
+        btn.innerHTML = '⏹';
+      }
+      
+      // Clear input and start listening
+      var inputId = target === 'alcove' ? 'alcove-input' : 'sanctum-input';
+      var inputEl = document.getElementById(inputId);
+      if (inputEl) {
+        inputEl.placeholder = 'Listening...';
+      }
+      
+      try {
+        speechRecognition.start();
+      } catch (e) {
+        console.error('Failed to start recognition:', e);
+        stopRecording();
+      }
+    }
+    
+    function stopRecording() {
+      isRecording = false;
+      
+      // Update both buttons (in case target changed)
+      ['sanctum-mic-btn', 'alcove-mic-btn'].forEach(function(btnId) {
+        var btn = document.getElementById(btnId);
+        if (btn) {
+          btn.classList.remove('recording');
+          btn.innerHTML = '🎤';
+        }
+      });
+      
+      // Restore placeholders
+      var sanctumInput = document.getElementById('sanctum-input');
+      var alcoveInput = document.getElementById('alcove-input');
+      if (sanctumInput) sanctumInput.placeholder = 'Speak to the council...';
+      if (alcoveInput) alcoveInput.placeholder = 'Your inquiry...';
+      
+      if (speechRecognition) {
+        try {
+          speechRecognition.stop();
+        } catch (e) {
+          // Already stopped
+        }
+      }
+    }
+    
     // Temporal Resonance State
     var temporalEnabled = false;
     var temporalStartTime = Date.now();
@@ -1363,6 +1489,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         currentAudio = null;
       }
       stopWebSpeech();
+      stopRecording();
       showStatus('sanctum-status', 'Voices silenced', 'success');
     }
     
