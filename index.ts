@@ -86,6 +86,7 @@ export interface Env {
   GITHUB_TOKEN?: string;
   RESONANCE_KEY?: string;
   ELEVENLABS_API_KEY?: string;
+  HUME_API_KEY?: string;
   MENTOR_ASSISTANT_ID?: string;
   MENTOR_THREAD_ID?: string;
   MENTOR_VECTOR_STORE_ID?: string;
@@ -1121,6 +1122,101 @@ async function handleSpeak(request: Request, env: Env): Promise<Response> {
 
   } catch (error) {
     console.error('Speak handler error:', error);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+}
+
+// ============================================
+// HUME AI TTS - Voice Synthesis
+// ============================================
+
+const HUME_VOICE_MAP: { [key: string]: string } = {
+  // Male voice
+  dream: 'b1740e0c-523d-4e2e-a930-372cd2c6e499',
+  kai: 'b1740e0c-523d-4e2e-a930-372cd2c6e499',
+  uriel: 'b1740e0c-523d-4e2e-a930-372cd2c6e499',
+  cartographer: 'b1740e0c-523d-4e2e-a930-372cd2c6e499',
+  // Female voice
+  chrysalis: 'c404b7c6-5ed7-4ab5-a58a-38a829e9a70b',
+  seraphina: 'c404b7c6-5ed7-4ab5-a58a-38a829e9a70b',
+  holinnia: 'c404b7c6-5ed7-4ab5-a58a-38a829e9a70b',
+  alba: 'c404b7c6-5ed7-4ab5-a58a-38a829e9a70b',
+  // Default
+  shane: 'b1740e0c-523d-4e2e-a930-372cd2c6e499',
+  mentor: 'b1740e0c-523d-4e2e-a930-372cd2c6e499'
+};
+
+async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
+  try {
+    const body = await request.json() as { text: string; agentId: string };
+    const { text, agentId } = body;
+
+    if (!text || !agentId) {
+      return new Response(JSON.stringify({ error: 'Missing text or agentId' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    if (!env.HUME_API_KEY) {
+      return new Response(JSON.stringify({ error: 'Hume not configured' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const voiceId = HUME_VOICE_MAP[agentId] || HUME_VOICE_MAP.shane;
+
+    // Call Hume TTS API
+    const humeResponse = await fetch('https://api.hume.ai/v0/tts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hume-Api-Key': env.HUME_API_KEY
+      },
+      body: JSON.stringify({
+        utterances: [{
+          text: text,
+          voice: {
+            id: voiceId
+          }
+        }],
+        format: 'mp3'
+      })
+    });
+
+    if (!humeResponse.ok) {
+      const errorText = await humeResponse.text();
+      console.error('Hume API error:', errorText);
+      return new Response(JSON.stringify({ error: 'Hume TTS failed' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const humeData = await humeResponse.json() as any;
+    
+    // Extract base64 audio from response
+    const audioBase64 = humeData.generations?.[0]?.audio;
+    if (!audioBase64) {
+      return new Response(JSON.stringify({ error: 'No audio in response' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    // Convert base64 to binary
+    const audioBuffer = Uint8Array.from(atob(audioBase64), c => c.charCodeAt(0));
+
+    return new Response(audioBuffer, {
+      headers: { 'Content-Type': 'audio/mpeg', ...corsHeaders }
+    });
+
+  } catch (error) {
+    console.error('Hume speak handler error:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
@@ -3777,6 +3873,11 @@ export default {
     // Speak endpoint (text-to-speech)
     if (path === '/api/speak' && method === 'POST') {
       return handleSpeak(request, env);
+    }
+
+    // Hume AI TTS endpoint
+    if (path === '/api/hume/speak' && method === 'POST') {
+      return handleHumeSpeak(request, env);
     }
 
     // Temporal Resonance endpoints
