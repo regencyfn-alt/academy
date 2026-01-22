@@ -1276,6 +1276,72 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     var sessionAudioBlobs = [];  // Store audio blobs for download
     var isRecordingSession = false;
     
+    // ============================================
+    // WEB SPEECH FALLBACK (until ElevenLabs Feb 2)
+    // ============================================
+    var useWebSpeech = true;  // Set to false when ElevenLabs is back
+    var webSpeechVoices = [];
+    
+    // Load available voices
+    if ('speechSynthesis' in window) {
+      speechSynthesis.onvoiceschanged = function() {
+        webSpeechVoices = speechSynthesis.getVoices();
+      };
+      webSpeechVoices = speechSynthesis.getVoices();
+    }
+    
+    // Agent voice preferences for Web Speech (pitch, rate adjustments)
+    var webSpeechAgentSettings = {
+      dream: { pitch: 1.1, rate: 0.9 },      // Poetic, slower
+      kai: { pitch: 1.0, rate: 1.0 },        // Balanced
+      uriel: { pitch: 0.9, rate: 0.95 },     // Deeper, measured
+      holinnia: { pitch: 1.05, rate: 0.9 },  // Warm, archival
+      cartographer: { pitch: 0.95, rate: 1.05 }, // Precise
+      chrysalis: { pitch: 1.15, rate: 1.0 }, // Lighter, curious
+      seraphina: { pitch: 1.1, rate: 0.95 }, // Gentle
+      alba: { pitch: 0.85, rate: 0.9 },      // Grounded, wise
+      shane: { pitch: 1.0, rate: 1.0 }       // Neutral
+    };
+    
+    function speakWithWebSpeech(text, agentId, callback) {
+      if (!('speechSynthesis' in window)) {
+        console.warn('Web Speech API not supported');
+        if (callback) callback();
+        return;
+      }
+      
+      // Cancel any ongoing speech
+      speechSynthesis.cancel();
+      
+      var utterance = new SpeechSynthesisUtterance(text);
+      var settings = webSpeechAgentSettings[agentId] || { pitch: 1.0, rate: 1.0 };
+      
+      utterance.pitch = settings.pitch;
+      utterance.rate = settings.rate;
+      utterance.volume = 1.0;
+      
+      // Try to find a good voice (prefer English)
+      if (webSpeechVoices.length > 0) {
+        var englishVoice = webSpeechVoices.find(function(v) { 
+          return v.lang.startsWith('en') && v.name.includes('Google'); 
+        }) || webSpeechVoices.find(function(v) { 
+          return v.lang.startsWith('en'); 
+        }) || webSpeechVoices[0];
+        utterance.voice = englishVoice;
+      }
+      
+      utterance.onend = function() { if (callback) callback(); };
+      utterance.onerror = function() { if (callback) callback(); };
+      
+      speechSynthesis.speak(utterance);
+    }
+    
+    function stopWebSpeech() {
+      if ('speechSynthesis' in window) {
+        speechSynthesis.cancel();
+      }
+    }
+    
     // Temporal Resonance State
     var temporalEnabled = false;
     var temporalStartTime = Date.now();
@@ -1296,6 +1362,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         currentAudio.src = '';
         currentAudio = null;
       }
+      stopWebSpeech();
       showStatus('sanctum-status', 'Voices silenced', 'success');
     }
     
@@ -1558,7 +1625,15 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         currentAudio.pause();
         currentAudio = null;
       }
+      stopWebSpeech();
       
+      // Use Web Speech API if enabled (ElevenLabs fallback disabled)
+      if (useWebSpeech) {
+        speakWithWebSpeech(text, 'shane', callback);
+        return;
+      }
+      
+      // ElevenLabs path (disabled until Feb 2)
       fetch(API + '/api/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1587,7 +1662,15 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         currentAudio.pause();
         currentAudio = null;
       }
+      stopWebSpeech();
       
+      // Use Web Speech API if enabled (ElevenLabs fallback disabled)
+      if (useWebSpeech) {
+        speakWithWebSpeech(text, agentId, callback);
+        return;
+      }
+      
+      // ElevenLabs path (disabled until Feb 2)
       fetch(API + '/api/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
