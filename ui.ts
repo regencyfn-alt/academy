@@ -1204,6 +1204,10 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         <h3>📚 Shared Library <span id="shared-cold-count" style="font-size: 0.7em; color: var(--silver);"></span></h3>
         <p style="font-size: 0.75em; color: var(--silver); margin-bottom: 10px;">Documents & images visible to all agents (keeps 15, rest in cold storage)</p>
         <div id="shared-archives-list"><div class="empty" style="padding: 20px;">No shared documents</div></div>
+        <button class="btn btn-secondary" onclick="toggleColdStorage()" style="margin-top: 10px;" id="cold-storage-toggle">❄️ View Cold Storage</button>
+        <div id="cold-storage-list" style="display: none; margin-top: 10px; border-top: 1px solid var(--silver); padding-top: 10px;">
+          <div class="empty" style="padding: 10px;">Loading cold storage...</div>
+        </div>
         <div class="file-upload" id="shared-upload-zone">
           <div class="rune">ᛟ</div>
           <p>Drop files here for all agents<br><small>.txt, .md, .json, .pdf, images</small></p>
@@ -3401,13 +3405,119 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           }
           if (data.documents && data.documents.length > 0) {
             document.getElementById('shared-archives-list').innerHTML = data.documents.map(function(doc) {
-              return '<div class="doc-list-item"><span onclick="viewSharedDoc(\\''+doc+'\\')">' + doc + '</span><button class="btn btn-secondary" onclick="deleteSharedDoc(\\''+doc+'\\')">Remove</button></div>';
+              return '<div class="doc-list-item"><span onclick="viewSharedDoc(\\''+doc+'\\')">' + doc + '</span><button class="btn btn-secondary" onclick="downloadSharedDoc(\\''+doc+'\\')">⬇</button><button class="btn btn-secondary" onclick="deleteSharedDoc(\\''+doc+'\\')">✕</button></div>';
             }).join('');
           } else {
             document.getElementById('shared-archives-list').innerHTML = '<div class="empty" style="padding: 20px;">No shared documents</div>';
           }
         })
         .catch(function() { document.getElementById('shared-archives-list').innerHTML = '<div class="empty" style="padding: 20px;">No shared documents</div>'; });
+    }
+    
+    function downloadSharedDoc(filename) {
+      fetch(API + '/shared/documents/' + encodeURIComponent(filename), { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          var content = data.content || '';
+          var blob = new Blob([content], { type: 'text/plain' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        })
+        .catch(function() { showStatus('wisdom-status', 'Failed to download', 'error'); });
+    }
+    
+    var coldStorageVisible = false;
+    
+    function toggleColdStorage() {
+      coldStorageVisible = !coldStorageVisible;
+      var list = document.getElementById('cold-storage-list');
+      var btn = document.getElementById('cold-storage-toggle');
+      if (coldStorageVisible) {
+        list.style.display = 'block';
+        btn.textContent = '❄️ Hide Cold Storage';
+        loadColdStorage();
+      } else {
+        list.style.display = 'none';
+        btn.textContent = '❄️ View Cold Storage';
+      }
+    }
+    
+    function loadColdStorage() {
+      fetch(API + '/shared/cold-storage', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.documents && data.documents.length > 0) {
+            document.getElementById('cold-storage-list').innerHTML = 
+              '<p style="color: var(--silver); font-size: 0.8em; margin-bottom: 10px;">❄️ Cold Storage (' + data.documents.length + ' files)</p>' +
+              data.documents.map(function(doc) {
+                var fname = doc.filename || doc;
+                return '<div class="doc-list-item" style="background: rgba(100,150,200,0.1);">' +
+                  '<span onclick="viewColdDoc(\\''+fname+'\\')">❄️ ' + fname + '</span>' +
+                  '<button class="btn btn-secondary" onclick="downloadColdDoc(\\''+fname+'\\')">⬇</button>' +
+                  '<button class="btn btn-primary" onclick="restoreColdDoc(\\''+fname+'\\')">🔥 Restore</button>' +
+                '</div>';
+              }).join('');
+          } else {
+            document.getElementById('cold-storage-list').innerHTML = '<div class="empty" style="padding: 10px;">No files in cold storage</div>';
+          }
+        })
+        .catch(function() { 
+          document.getElementById('cold-storage-list').innerHTML = '<div class="empty" style="padding: 10px;">Failed to load cold storage</div>'; 
+        });
+    }
+    
+    function viewColdDoc(filename) {
+      fetch(API + '/shared/cold-storage/' + encodeURIComponent(filename), { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          document.getElementById('shared-filename').value = filename;
+          document.getElementById('shared-content').value = data.content || '';
+          showStatus('wisdom-status', 'Loaded from cold storage', 'success');
+        })
+        .catch(function() { showStatus('wisdom-status', 'Failed to load', 'error'); });
+    }
+    
+    function downloadColdDoc(filename) {
+      fetch(API + '/shared/cold-storage/' + encodeURIComponent(filename), { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          var content = data.content || '';
+          var blob = new Blob([content], { type: 'text/plain' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        })
+        .catch(function() { showStatus('wisdom-status', 'Failed to download', 'error'); });
+    }
+    
+    function restoreColdDoc(filename) {
+      if (!confirm('Restore "' + filename + '" to active Shared Library?')) return;
+      fetch(API + '/shared/cold-storage/' + encodeURIComponent(filename), { 
+        method: 'POST',
+        credentials: 'same-origin' 
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.success) {
+            showStatus('wisdom-status', 'Restored: ' + filename, 'success');
+            loadSharedArchives();
+            loadColdStorage();
+          } else {
+            showStatus('wisdom-status', 'Restore failed', 'error');
+          }
+        })
+        .catch(function() { showStatus('wisdom-status', 'Restore failed', 'error'); });
     }
     
     function viewSharedDoc(filename) {
