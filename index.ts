@@ -3724,6 +3724,29 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
+    // ============================================
+    // LOVABLE APP PROXY - /academy/* → Lovable PWA
+    // ============================================
+    if (path.startsWith('/academy')) {
+      const lovablePath = path.replace('/academy', '') || '/';
+      const lovableUrl = `https://easy-peasy-flow.lovable.app${lovablePath}${url.search}`;
+      
+      // Forward the request to Lovable
+      const lovableResponse = await fetch(lovableUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body
+      });
+      
+      // Return with CORS headers
+      const response = new Response(lovableResponse.body, {
+        status: lovableResponse.status,
+        headers: lovableResponse.headers
+      });
+      
+      return response;
+    }
+
     // Vision toggle routes
     if (path === '/api/vision/toggle' && method === 'POST') {
       return handleVisionToggle(request, env);
