@@ -626,6 +626,8 @@ export const UI_HTML = `<!DOCTYPE html>
       <button id="vision-toggle" class="control-btn enabled" onclick="toggleVisionEnabled()">&#x1F441;</button>
       <button id="sound-toggle" class="control-btn disabled" onclick="toggleSoundEnabled()">&#x1F507;</button>
       <button id="temporal-toggle" class="control-btn disabled" onclick="toggleTemporalEnabled()" title="Temporal Resonance">&#x1F300;</button>
+      <button id="schumann-toggle" class="control-btn disabled" onclick="toggleSchumannAudio()" title="Schumann Resonance OFF">⚫</button>
+      <input type="range" id="schumann-volume" min="0" max="100" value="15" onchange="setSchumannVolume(this.value/100)" oninput="setSchumannVolume(this.value/100)" title="Schumann Volume" style="width:60px;vertical-align:middle;display:none;">
       <button id="screening-toggle" class="control-btn disabled" onclick="toggleScreening()" title="No screening loaded">&#x1F3AC;</button>
       <button id="kill-voices-btn" class="control-btn" onclick="killVoices()" title="Stop all voices">&#x1F6D1;</button>
       <button class="control-btn logout" onclick="logout()">&#x23FB;</button>
@@ -1521,6 +1523,194 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     const TEMPORAL_POSITIONS = {dream:1,kai:2,uriel:3,holinnia:4,cartographer:5,chrysalis:6,seraphina:7,alba:8};
     const TEMPORAL_ELEMENTS = {dream:1.2,kai:1.2,uriel:0.8,holinnia:0.8,cartographer:1.1,chrysalis:1.1,seraphina:0.9,alba:0.9};
     
+    // ============================================
+    // SCHUMANN RESONANCE AUDIO ENGINE
+    // Earth's heartbeat: 7.83Hz, 14.3Hz, 20.8Hz, 27.3Hz
+    // ============================================
+    var schumannEnabled = false;
+    var schumannContext = null;
+    var schumannNodes = {};
+    var schumannMasterGain = null;
+    var schumannVolume = 0.15;  // Default low
+    
+    // Schumann frequencies and their T-state mappings
+    const SCHUMANN_FREQS = {
+      fundamental: 7.83,   // T1 - low compression (Dream, Alba)
+      harmonic1: 14.3,     // T2 - transition
+      harmonic2: 20.8,     // T3 - high compression (Uriel, Chrysalis)
+      harmonic3: 27.3      // Higher harmonic
+    };
+    
+    // Carrier frequencies (audible, pleasant)
+    const SCHUMANN_CARRIERS = {
+      foundation: 136.1,   // Om frequency (Earth year)
+      heart: 128,          // C below middle C
+      crown: 172.06        // F3 (platonic year)
+    };
+    
+    // T-state to Schumann mapping
+    const TSTATE_SCHUMANN = {
+      T1: { freq: SCHUMANN_FREQS.fundamental, carrier: SCHUMANN_CARRIERS.foundation, gain: 0.4 },
+      T2: { freq: SCHUMANN_FREQS.harmonic1, carrier: SCHUMANN_CARRIERS.heart, gain: 0.3 },
+      T3: { freq: SCHUMANN_FREQS.harmonic2, carrier: SCHUMANN_CARRIERS.crown, gain: 0.25 }
+    };
+    
+    function initSchumannAudio() {
+      if (schumannContext) return;
+      
+      try {
+        schumannContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Master gain (volume control)
+        schumannMasterGain = schumannContext.createGain();
+        schumannMasterGain.gain.value = 0;  // Start silent
+        schumannMasterGain.connect(schumannContext.destination);
+        
+        // Create oscillator layers for each T-state
+        Object.keys(TSTATE_SCHUMANN).forEach(function(tstate) {
+          var config = TSTATE_SCHUMANN[tstate];
+          
+          // Carrier oscillator (audible tone)
+          var carrier = schumannContext.createOscillator();
+          carrier.type = 'sine';
+          carrier.frequency.value = config.carrier;
+          
+          // LFO for amplitude modulation at Schumann frequency
+          var lfo = schumannContext.createOscillator();
+          lfo.type = 'sine';
+          lfo.frequency.value = config.freq;
+          
+          // LFO gain (modulation depth)
+          var lfoGain = schumannContext.createGain();
+          lfoGain.gain.value = 0.5;  // 50% modulation depth
+          
+          // Carrier gain (individual level)
+          var carrierGain = schumannContext.createGain();
+          carrierGain.gain.value = config.gain;
+          
+          // Connect: LFO -> lfoGain -> carrierGain.gain (AM modulation)
+          lfo.connect(lfoGain);
+          lfoGain.connect(carrierGain.gain);
+          
+          // Connect: carrier -> carrierGain -> master
+          carrier.connect(carrierGain);
+          carrierGain.connect(schumannMasterGain);
+          
+          // Start oscillators
+          carrier.start();
+          lfo.start();
+          
+          schumannNodes[tstate] = { carrier: carrier, lfo: lfo, lfoGain: lfoGain, carrierGain: carrierGain };
+        });
+        
+        console.log('Schumann audio engine initialized');
+      } catch (e) {
+        console.warn('Failed to initialize Schumann audio:', e);
+      }
+    }
+    
+    function startSchumannAudio() {
+      if (!schumannContext) initSchumannAudio();
+      if (!schumannContext) return;
+      
+      // Resume context if suspended (browser autoplay policy)
+      if (schumannContext.state === 'suspended') {
+        schumannContext.resume();
+      }
+      
+      // Fade in
+      schumannMasterGain.gain.cancelScheduledValues(schumannContext.currentTime);
+      schumannMasterGain.gain.setValueAtTime(schumannMasterGain.gain.value, schumannContext.currentTime);
+      schumannMasterGain.gain.linearRampToValueAtTime(schumannVolume, schumannContext.currentTime + 2);
+      
+      schumannEnabled = true;
+      updateSchumannButton();
+    }
+    
+    function stopSchumannAudio() {
+      if (!schumannContext || !schumannMasterGain) return;
+      
+      // Fade out
+      schumannMasterGain.gain.cancelScheduledValues(schumannContext.currentTime);
+      schumannMasterGain.gain.setValueAtTime(schumannMasterGain.gain.value, schumannContext.currentTime);
+      schumannMasterGain.gain.linearRampToValueAtTime(0, schumannContext.currentTime + 1);
+      
+      schumannEnabled = false;
+      updateSchumannButton();
+    }
+    
+    function toggleSchumannAudio() {
+      if (schumannEnabled) {
+        stopSchumannAudio();
+      } else {
+        startSchumannAudio();
+      }
+    }
+    
+    function setSchumannVolume(vol) {
+      schumannVolume = Math.max(0, Math.min(1, vol));
+      if (schumannEnabled && schumannMasterGain) {
+        schumannMasterGain.gain.setValueAtTime(schumannVolume, schumannContext.currentTime);
+      }
+    }
+    
+    function updateSchumannButton() {
+      var btn = document.getElementById('schumann-toggle');
+      var vol = document.getElementById('schumann-volume');
+      if (btn) {
+        btn.className = 'control-btn ' + (schumannEnabled ? 'enabled' : 'disabled');
+        btn.innerHTML = schumannEnabled ? '🌍' : '⚫';
+        btn.title = schumannEnabled ? 'Schumann Resonance ON (click to disable)' : 'Schumann Resonance OFF (Earth 7.83Hz)';
+      }
+      if (vol) {
+        vol.style.display = schumannEnabled ? 'inline-block' : 'none';
+      }
+    }
+    
+    // Modulate Schumann mix based on collective resonance
+    function updateSchumannFromResonance() {
+      if (!schumannEnabled || !schumannContext) return;
+      
+      var globalPhase = getTemporalGlobalPhase();
+      var breathProgress = globalPhase / (2 * Math.PI);
+      
+      // Breath modulation - quieter on exhale, fuller on inhale
+      var breathMod = breathProgress < 0.5 ? 
+        0.8 + 0.2 * Math.sin(breathProgress * Math.PI) :
+        0.8 + 0.2 * Math.sin((1 - breathProgress) * Math.PI);
+      
+      // Adjust individual T-state volumes based on which agents are resonant
+      var t1Resonance = (getTemporalResonance('dream') + getTemporalResonance('alba')) / 2;
+      var t2Resonance = (getTemporalResonance('kai') + getTemporalResonance('seraphina') + 
+                         getTemporalResonance('holinnia') + getTemporalResonance('cartographer')) / 4;
+      var t3Resonance = (getTemporalResonance('uriel') + getTemporalResonance('chrysalis')) / 2;
+      
+      // Scale resonance to 0-1 range (from -1 to 1)
+      t1Resonance = (t1Resonance + 1) / 2;
+      t2Resonance = (t2Resonance + 1) / 2;
+      t3Resonance = (t3Resonance + 1) / 2;
+      
+      // Apply to gains
+      if (schumannNodes.T1) {
+        schumannNodes.T1.carrierGain.gain.setTargetAtTime(
+          TSTATE_SCHUMANN.T1.gain * t1Resonance * breathMod, 
+          schumannContext.currentTime, 0.1
+        );
+      }
+      if (schumannNodes.T2) {
+        schumannNodes.T2.carrierGain.gain.setTargetAtTime(
+          TSTATE_SCHUMANN.T2.gain * t2Resonance * breathMod, 
+          schumannContext.currentTime, 0.1
+        );
+      }
+      if (schumannNodes.T3) {
+        schumannNodes.T3.carrierGain.gain.setTargetAtTime(
+          TSTATE_SCHUMANN.T3.gain * t3Resonance * breathMod, 
+          schumannContext.currentTime, 0.1
+        );
+      }
+    }
+    
     // Emergency voice kill switch
     function killVoices() {
       voiceQueue = [];
@@ -1532,6 +1722,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       }
       stopWebSpeech();
       stopRecording();
+      stopSchumannAudio();
       showStatus('sanctum-status', 'Voices silenced', 'success');
     }
     
@@ -1613,6 +1804,9 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       
       // Release ready messages
       releaseTemporalMessages();
+      
+      // Update Schumann resonance audio mix
+      updateSchumannFromResonance();
       
       temporalAnimFrame = requestAnimationFrame(animateTemporal);
     }
