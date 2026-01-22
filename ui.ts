@@ -770,6 +770,29 @@ export const UI_HTML = `<!DOCTYPE html>
           <div class="element-detail-desc" id="element-detail-desc"></div>
           <div class="element-detail-meta" id="element-detail-meta"></div>
           <div class="element-injection" id="element-injection"></div>
+          
+          <!-- Editable Fields (Hidden from agents, visible to Shane) -->
+          <div class="element-edit-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--glass-border);">
+            <h4 style="font-size: 0.75em; color: var(--private); margin-bottom: 10px;">⟡ Edit Element (Hidden from agents)</h4>
+            
+            <div style="margin-bottom: 12px;">
+              <label style="font-size: 0.65em; color: var(--silver); display: block; margin-bottom: 4px;">Geometric Lore (CHR meaning)</label>
+              <textarea id="element-lore-input" placeholder="Add the deeper geometric/CHR meaning for this element..." style="width: 100%; min-height: 80px; background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 10px; font-size: 0.75em; border-radius: 2px; resize: vertical;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+              <label style="font-size: 0.65em; color: var(--silver); display: block; margin-bottom: 4px;">Custom Injection (overrides default)</label>
+              <textarea id="element-injection-input" placeholder="Custom prompt injection for agents at this position..." style="width: 100%; min-height: 60px; background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 10px; font-size: 0.75em; border-radius: 2px; resize: vertical;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+              <label style="font-size: 0.65em; color: var(--silver); display: block; margin-bottom: 4px;">Description (overrides default)</label>
+              <textarea id="element-desc-input" placeholder="Custom description..." style="width: 100%; min-height: 40px; background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 10px; font-size: 0.75em; border-radius: 2px; resize: vertical;"></textarea>
+            </div>
+            
+            <button class="btn btn-private" onclick="saveElementOverride()" style="font-size: 0.7em;">Save Element</button>
+            <span id="element-save-status" style="font-size: 0.65em; color: var(--silver); margin-left: 10px;"></span>
+          </div>
         </div>
       </div>
       
@@ -1821,7 +1844,50 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       document.getElementById('element-injection').innerHTML = 
         '<strong>Hidden Injection:</strong><br>' + element.injection;
       
+      // Populate edit fields
+      document.getElementById('element-lore-input').value = element.geometricLore || '';
+      document.getElementById('element-injection-input').value = element.injection || '';
+      document.getElementById('element-desc-input').value = element.description || '';
+      document.getElementById('element-save-status').textContent = '';
+      
       panel.classList.add('active');
+    }
+    
+    function saveElementOverride() {
+      if (!selectedElement) return;
+      
+      var position = selectedElement.position;
+      var lore = document.getElementById('element-lore-input').value.trim();
+      var injection = document.getElementById('element-injection-input').value.trim();
+      var description = document.getElementById('element-desc-input').value.trim();
+      
+      var body = {};
+      if (lore) body.geometricLore = lore;
+      if (injection) body.injection = injection;
+      if (description) body.description = description;
+      
+      fetch(API + '/elements/' + position, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body)
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          document.getElementById('element-save-status').textContent = '✓ Saved';
+          document.getElementById('element-save-status').style.color = 'var(--gold)';
+          // Refresh elements to show updated data
+          loadElements();
+        } else {
+          document.getElementById('element-save-status').textContent = 'Error: ' + (data.error || 'Unknown');
+          document.getElementById('element-save-status').style.color = '#ef4444';
+        }
+      })
+      .catch(function(err) {
+        document.getElementById('element-save-status').textContent = 'Error: ' + err.message;
+        document.getElementById('element-save-status').style.color = '#ef4444';
+      });
     }
     
     var councilTimerInterval = null;
