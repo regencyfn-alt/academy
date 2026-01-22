@@ -1162,6 +1162,7 @@ async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
     }
 
     if (!env.HUME_API_KEY) {
+      console.error('HUME_API_KEY not configured');
       return new Response(JSON.stringify({ error: 'Hume not configured' }), {
         status: 503,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
@@ -1169,6 +1170,7 @@ async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
     }
 
     const voiceId = HUME_VOICE_MAP[agentId] || HUME_VOICE_MAP.shane;
+    console.log('Hume TTS request:', { agentId, voiceId, textLength: text.length });
 
     // Call Hume TTS API
     const humeResponse = await fetch('https://api.hume.ai/v0/tts', {
@@ -1181,28 +1183,31 @@ async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
         utterances: [{
           text: text,
           voice: {
-            id: voiceId
+            id: voiceId,
+            provider: 'CUSTOM_VOICE'
           }
         }],
-        format: 'mp3'
+        format: { type: 'mp3' }
       })
     });
 
     if (!humeResponse.ok) {
       const errorText = await humeResponse.text();
-      console.error('Hume API error:', errorText);
-      return new Response(JSON.stringify({ error: 'Hume TTS failed' }), {
+      console.error('Hume API error:', humeResponse.status, errorText);
+      return new Response(JSON.stringify({ error: 'Hume TTS failed', details: errorText }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
     const humeData = await humeResponse.json() as any;
+    console.log('Hume response keys:', Object.keys(humeData));
     
     // Extract base64 audio from response
     const audioBase64 = humeData.generations?.[0]?.audio;
     if (!audioBase64) {
-      return new Response(JSON.stringify({ error: 'No audio in response' }), {
+      console.error('No audio in Hume response:', JSON.stringify(humeData).substring(0, 500));
+      return new Response(JSON.stringify({ error: 'No audio in response', data: humeData }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
@@ -1217,7 +1222,7 @@ async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
 
   } catch (error) {
     console.error('Hume speak handler error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    return new Response(JSON.stringify({ error: 'Internal server error', message: String(error) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
