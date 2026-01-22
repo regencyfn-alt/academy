@@ -3885,6 +3885,43 @@ export default {
       return handleHumeSpeak(request, env);
     }
 
+    // Hume debug endpoint - test API connection
+    if (path === '/api/hume/test' && method === 'GET') {
+      if (!env.HUME_API_KEY) {
+        return new Response(JSON.stringify({ error: 'HUME_API_KEY not set' }), {
+          status: 503, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+      
+      try {
+        const testResponse = await fetch('https://api.hume.ai/v0/tts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Hume-Api-Key': env.HUME_API_KEY
+          },
+          body: JSON.stringify({
+            utterances: [{ text: 'Hello world' }]
+          })
+        });
+        
+        const responseText = await testResponse.text();
+        return new Response(JSON.stringify({
+          status: testResponse.status,
+          statusText: testResponse.statusText,
+          keyPresent: !!env.HUME_API_KEY,
+          keyPrefix: env.HUME_API_KEY?.substring(0, 8) + '...',
+          response: responseText.substring(0, 1000)
+        }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: String(e) }), {
+          status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+    }
+
     // Temporal Resonance endpoints
     if (path === '/api/temporal/toggle' && method === 'POST') {
       return handleTemporalToggle(request, env);
