@@ -186,6 +186,8 @@ interface ChrononomicElement {
   color: string;         // Hex color for UI
   complement: number;    // Position of complementary element (sum to 9)
   injection: string;     // Hidden prompt injection
+  geometricLore?: string;  // Deep CHR meaning (editable)
+  customName?: string;     // Override display name (editable)
 }
 
 // The 8 Elements - Chronon Degrees of Freedom
@@ -3139,15 +3141,20 @@ You are ${displayName}. This is how Shane and others know you. Use this name whe
   const storedPosition = await safeGetText(env.CLUBHOUSE_KV, `position:${agent.id}`);
   const agentPosition = storedPosition ? parseInt(storedPosition) : agent.position;
   if (agentPosition && agentPosition >= 1 && agentPosition <= 8) {
-    const element = getElementByPosition(agentPosition);
+    const baseElement = getElementByPosition(agentPosition);
     const complement = getComplementaryElement(agentPosition);
+    // Merge with KV overrides
+    const override = await safeGetJSON<Partial<ChrononomicElement>>(env.CLUBHOUSE_KV, `element-override:${agentPosition}`);
+    const element = baseElement ? { ...baseElement, ...override } : null;
+    
     if (element) {
+      const displayName = element.customName || element.name;
       prompt += `--- Your Chrononomic Element (Position ${agentPosition}) ---
-Element: ${element.name} (${element.dof})
+Element: ${displayName} (${element.dof})
 Nature: ${element.description}
 Polarity: ${element.polarity} | Compression: ${element.compression}
 Complement: Position ${element.complement} - ${complement?.name || 'Unknown'} (${complement?.dof || ''})
-
+${element.geometricLore ? `\nGeometric Lore:\n${element.geometricLore}\n` : ''}
 ${element.injection}
 ---\n\n`;
     }
@@ -6178,8 +6185,12 @@ INSTRUCTIONS:
             }
           }
           
+          // Merge with KV overrides (geometricLore, custom injection, etc.)
+          const override = await safeGetJSON<Partial<ChrononomicElement>>(env.CLUBHOUSE_KV, `element-override:${element.position}`);
+          
           return {
             ...element,
+            ...override,
             agentId,
             agentName: agentId ? (await env.CLUBHOUSE_KV.get(`name:${agentId}`)) || agentAtPosition?.name || agentId : null
           };
@@ -6195,8 +6206,42 @@ INSTRUCTIONS:
         if (!element) {
           return jsonResponse({ error: 'Element position must be 1-8' }, 400);
         }
+        // Merge with KV overrides
+        const override = await safeGetJSON<Partial<ChrononomicElement>>(env.CLUBHOUSE_KV, `element-override:${position}`);
+        const mergedElement = { ...element, ...override };
         const complement = getComplementaryElement(position);
-        return jsonResponse({ element, complement });
+        return jsonResponse({ element: mergedElement, complement });
+      }
+
+      // PUT /elements/:position - update element overrides (lore, injection, description)
+      if (elementGetMatch && method === 'PUT') {
+        const position = parseInt(elementGetMatch[1]);
+        if (position < 1 || position > 8) {
+          return jsonResponse({ error: 'Element position must be 1-8' }, 400);
+        }
+        const body = await request.json() as {
+          geometricLore?: string;
+          injection?: string;
+          description?: string;
+          customName?: string;
+        };
+        
+        // Get existing overrides and merge
+        const existing = await safeGetJSON<Record<string, any>>(env.CLUBHOUSE_KV, `element-override:${position}`) || {};
+        const updated = {
+          ...existing,
+          ...(body.geometricLore !== undefined && { geometricLore: body.geometricLore }),
+          ...(body.injection !== undefined && { injection: body.injection }),
+          ...(body.description !== undefined && { description: body.description }),
+          ...(body.customName !== undefined && { customName: body.customName }),
+          updatedAt: new Date().toISOString()
+        };
+        
+        await env.CLUBHOUSE_KV.put(`element-override:${position}`, JSON.stringify(updated));
+        
+        // Return merged element
+        const baseElement = getElementByPosition(position);
+        return jsonResponse({ success: true, element: { ...baseElement, ...updated } });
       }
 
       // GET /agents/:id/element - get agent's element assignment
