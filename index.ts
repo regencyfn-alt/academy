@@ -1170,10 +1170,10 @@ async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
     }
 
     const voiceId = HUME_VOICE_MAP[agentId] || HUME_VOICE_MAP.shane;
-    console.log('Hume TTS request:', { agentId, voiceId, textLength: text.length });
+    console.log('Hume TTS streaming request:', { agentId, voiceId, textLength: text.length });
 
-    // Call Hume TTS API
-    const humeResponse = await fetch('https://api.hume.ai/v0/tts', {
+    // Use streaming endpoint for faster playback start
+    const humeResponse = await fetch('https://api.hume.ai/v0/tts/stream/file', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1193,31 +1193,20 @@ async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
 
     if (!humeResponse.ok) {
       const errorText = await humeResponse.text();
-      console.error('Hume API error:', humeResponse.status, errorText);
+      console.error('Hume streaming API error:', humeResponse.status, errorText);
       return new Response(JSON.stringify({ error: 'Hume TTS failed', details: errorText }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
-    const humeData = await humeResponse.json() as any;
-    console.log('Hume response keys:', Object.keys(humeData));
-    
-    // Extract base64 audio from response
-    const audioBase64 = humeData.generations?.[0]?.audio;
-    if (!audioBase64) {
-      console.error('No audio in Hume response:', JSON.stringify(humeData).substring(0, 500));
-      return new Response(JSON.stringify({ error: 'No audio in response', data: humeData }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
-    }
-
-    // Convert base64 to binary
-    const audioBuffer = Uint8Array.from(atob(audioBase64), c => c.charCodeAt(0));
-
-    return new Response(audioBuffer, {
-      headers: { 'Content-Type': 'audio/mpeg', ...corsHeaders }
+    // Pass through the streaming response directly
+    return new Response(humeResponse.body, {
+      headers: { 
+        'Content-Type': 'audio/mpeg',
+        'Transfer-Encoding': 'chunked',
+        ...corsHeaders 
+      }
     });
 
   } catch (error) {
