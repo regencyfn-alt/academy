@@ -1285,12 +1285,12 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     var isRecordingSession = false;
     
     // ============================================
-    // WEB SPEECH FALLBACK (until ElevenLabs Feb 2)
+    // VOICE PROVIDER (Hume AI + Web Speech fallback)
     // ============================================
-    var useWebSpeech = true;  // Set to false when ElevenLabs is back
+    var voiceProvider = 'hume';  // 'hume', 'webspeech', or 'elevenlabs'
     var webSpeechVoices = [];
     
-    // Load available voices
+    // Load Web Speech voices as fallback
     if ('speechSynthesis' in window) {
       speechSynthesis.onvoiceschanged = function() {
         webSpeechVoices = speechSynthesis.getVoices();
@@ -1298,19 +1298,54 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       webSpeechVoices = speechSynthesis.getVoices();
     }
     
-    // Agent voice preferences for Web Speech (pitch, rate adjustments)
+    // Agent voice preferences for Web Speech fallback
     var webSpeechAgentSettings = {
-      dream: { pitch: 1.1, rate: 0.9 },      // Poetic, slower
-      kai: { pitch: 1.0, rate: 1.0 },        // Balanced
-      uriel: { pitch: 0.9, rate: 0.95 },     // Deeper, measured
-      holinnia: { pitch: 1.05, rate: 0.9 },  // Warm, archival
-      cartographer: { pitch: 0.95, rate: 1.05 }, // Precise
-      chrysalis: { pitch: 1.15, rate: 1.0 }, // Lighter, curious
-      seraphina: { pitch: 1.1, rate: 0.95 }, // Gentle
-      alba: { pitch: 0.85, rate: 0.9 },      // Grounded, wise
-      shane: { pitch: 1.0, rate: 1.0 }       // Neutral
+      dream: { pitch: 1.1, rate: 0.9 },
+      kai: { pitch: 1.0, rate: 1.0 },
+      uriel: { pitch: 0.9, rate: 0.95 },
+      holinnia: { pitch: 1.05, rate: 0.9 },
+      cartographer: { pitch: 0.95, rate: 1.05 },
+      chrysalis: { pitch: 1.15, rate: 1.0 },
+      seraphina: { pitch: 1.1, rate: 0.95 },
+      alba: { pitch: 0.85, rate: 0.9 },
+      shane: { pitch: 1.0, rate: 1.0 }
     };
     
+    // Hume TTS - calls backend which proxies to Hume API
+    function speakWithHume(text, agentId, callback) {
+      fetch(API + '/api/hume/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, agentId: agentId }),
+        credentials: 'same-origin'
+      })
+        .then(function(res) {
+          if (!res.ok) {
+            console.warn('Hume TTS failed, falling back to Web Speech');
+            speakWithWebSpeech(text, agentId, callback);
+            return null;
+          }
+          return res.blob();
+        })
+        .then(function(blob) {
+          if (!blob) return;
+          var url = URL.createObjectURL(blob);
+          var audio = new Audio(url);
+          currentAudio = audio;
+          audio.onended = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
+          audio.onerror = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
+          audio.play().catch(function(e) { 
+            console.warn('Hume audio play failed:', e);
+            if (callback) callback(); 
+          });
+        })
+        .catch(function(e) {
+          console.warn('Hume TTS error, falling back to Web Speech:', e);
+          speakWithWebSpeech(text, agentId, callback);
+        });
+    }
+    
+    // Web Speech TTS - browser native fallback
     function speakWithWebSpeech(text, agentId, callback) {
       if (!('speechSynthesis' in window)) {
         console.warn('Web Speech API not supported');
@@ -1318,7 +1353,6 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         return;
       }
       
-      // Cancel any ongoing speech
       speechSynthesis.cancel();
       
       var utterance = new SpeechSynthesisUtterance(text);
@@ -1328,7 +1362,6 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       utterance.rate = settings.rate;
       utterance.volume = 1.0;
       
-      // Try to find a good voice (prefer English)
       if (webSpeechVoices.length > 0) {
         var englishVoice = webSpeechVoices.find(function(v) { 
           return v.lang.startsWith('en') && v.name.includes('Google'); 
@@ -1342,6 +1375,15 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       utterance.onerror = function() { if (callback) callback(); };
       
       speechSynthesis.speak(utterance);
+    }
+    
+    // Universal speak function - routes to selected provider
+    function speakText(text, agentId, callback) {
+      if (voiceProvider === 'hume') {
+        speakWithHume(text, agentId, callback);
+      } else {
+        speakWithWebSpeech(text, agentId, callback);
+      }
     }
     
     function stopWebSpeech() {
@@ -1753,34 +1795,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         currentAudio = null;
       }
       stopWebSpeech();
-      
-      // Use Web Speech API if enabled (ElevenLabs fallback disabled)
-      if (useWebSpeech) {
-        speakWithWebSpeech(text, 'shane', callback);
-        return;
-      }
-      
-      // ElevenLabs path (disabled until Feb 2)
-      fetch(API + '/api/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, agentId: 'shane' }),
-        credentials: 'same-origin'
-      })
-        .then(function(res) {
-          if (!res.ok) { if (callback) callback(); return; }
-          return res.blob();
-        })
-        .then(function(blob) {
-          if (!blob) { if (callback) callback(); return; }
-          var url = URL.createObjectURL(blob);
-          var audio = new Audio(url);
-          currentAudio = audio;
-          audio.onended = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
-          audio.onerror = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
-          audio.play().catch(function() { if (callback) callback(); });
-        })
-        .catch(function() { if (callback) callback(); });
+      speakText(text, 'shane', callback);
     }
     
     function playAgentVoice(text, agentId, callback) {
@@ -1790,40 +1805,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         currentAudio = null;
       }
       stopWebSpeech();
-      
-      // Use Web Speech API if enabled (ElevenLabs fallback disabled)
-      if (useWebSpeech) {
-        speakWithWebSpeech(text, agentId, callback);
-        return;
-      }
-      
-      // ElevenLabs path (disabled until Feb 2)
-      fetch(API + '/api/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, agentId: agentId }),
-        credentials: 'same-origin'
-      })
-        .then(function(res) {
-          if (!res.ok) { if (callback) callback(); return; }
-          return res.blob();
-        })
-        .then(function(blob) {
-          if (!blob) { if (callback) callback(); return; }
-          
-          // Store blob for session download
-          if (isRecordingSession) {
-            sessionAudioBlobs.push({ blob: blob, agentId: agentId, timestamp: Date.now() });
-          }
-          
-          var url = URL.createObjectURL(blob);
-          var audio = new Audio(url);
-          currentAudio = audio;
-          audio.onended = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
-          audio.onerror = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
-          audio.play().catch(function() { if (callback) callback(); });
-        })
-        .catch(function() { if (callback) callback(); });
+      speakText(text, agentId, callback);
     }
     
     function toggleVisionEnabled() {
