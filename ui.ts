@@ -689,16 +689,48 @@ export const UI_HTML = `<!DOCTYPE html>
       <div id="mode-banner" style="display: none; text-align: center; margin: 10px 0;"><img id="mode-banner-img" src="" style="max-width: 300px; border-radius: 4px; border: 1px solid var(--gold);"></div>
       <div id="crucible-panel" class="blackboard-panel">
         <div class="blackboard-header">
-          <span class="blackboard-title">◈ Crucible - Shared Mathematics</span>
+          <span class="blackboard-title">◈ Crucible - Multi-Board Mathematics</span>
           <span class="blackboard-manager">Manager: Elian</span>
+        </div>
+        <div class="blackboard-controls" style="padding: 10px; background: rgba(0,0,0,0.3); display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+          <label style="color: var(--silver);">Board:</label>
+          <select id="crucible-board-select" onchange="loadCrucibleBoard(this.value)" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 5px; min-width: 150px;">
+            <option value="master">📜 Master (Shane)</option>
+            <option value="mixed" selected>🔀 Mixed (Collab)</option>
+            <option value="dream">💫 Dream</option>
+            <option value="kai">⚡ Kai</option>
+            <option value="uriel">🔥 Uriel</option>
+            <option value="holinnia">🌊 Holinnia</option>
+            <option value="cartographer">🗺️ Cartographer</option>
+            <option value="chrysalis">🦋 Chrysalis</option>
+            <option value="seraphina">✨ Seraphina</option>
+            <option value="alba">🌅 Alba</option>
+          </select>
+          <span id="crucible-board-status" style="color: var(--silver); font-size: 0.8em;"></span>
+          <div style="flex-grow: 1;"></div>
+          <label style="color: var(--silver);">Copy from:</label>
+          <select id="crucible-copy-from" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 5px;">
+            <option value="">-- Select --</option>
+            <option value="mixed">🔀 Mixed</option>
+            <option value="dream">💫 Dream</option>
+            <option value="kai">⚡ Kai</option>
+            <option value="uriel">🔥 Uriel</option>
+            <option value="holinnia">🌊 Holinnia</option>
+            <option value="cartographer">🗺️ Cartographer</option>
+            <option value="chrysalis">🦋 Chrysalis</option>
+            <option value="seraphina">✨ Seraphina</option>
+            <option value="alba">🌅 Alba</option>
+          </select>
+          <button class="btn btn-secondary" onclick="copyToCrucibleBoard()" title="Append content from selected board">📋 Copy</button>
         </div>
         <div class="blackboard-content">
           <textarea id="crucible-editor" placeholder="Enter LaTeX here... e.g. \$E = mc^2\$" oninput="updateCruciblePreview()"></textarea>
           <div id="crucible-preview" class="crucible-preview"></div>
         </div>
         <div class="blackboard-actions">
-          <button class="btn btn-secondary" onclick="clearCrucible()">Clear</button>
+          <button class="btn btn-secondary" onclick="clearCrucible()">Clear Board</button>
           <button class="btn btn-primary" onclick="saveCrucible()">Save to Board</button>
+          <button class="btn btn-secondary" onclick="refreshCrucibleBoards()" title="Refresh board list">🔄</button>
         </div>
       </div>
       <div id="workshop-panel" class="blackboard-panel">
@@ -4251,31 +4283,92 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     });
 
     function loadCrucibleContent() {
-      fetch(API + '/crucible/content', { credentials: 'same-origin' })
+      var board = document.getElementById('crucible-board-select').value || 'mixed';
+      loadCrucibleBoard(board);
+    }
+    
+    var currentCrucibleBoard = 'mixed';
+    
+    function loadCrucibleBoard(boardId) {
+      currentCrucibleBoard = boardId;
+      fetch(API + '/crucible/content?board=' + boardId, { credentials: 'same-origin' })
         .then(function(res) { return res.json(); })
         .then(function(data) {
-          if (data.content) {
-            document.getElementById('crucible-editor').value = data.content;
-            updateCruciblePreview();
-          }
+          document.getElementById('crucible-editor').value = data.content || '';
+          updateCruciblePreview();
+          updateCrucibleBoardStatus();
         })
-        .catch(function() { console.log('Could not load crucible content'); });
+        .catch(function() { console.log('Could not load crucible board'); });
     }
+    
     function saveCrucible() {
       var content = document.getElementById('crucible-editor').value;
+      var board = currentCrucibleBoard;
       fetch(API + '/crucible/content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: content }),
+        body: JSON.stringify({ content: content, board: board }),
         credentials: 'same-origin'
       })
-      .then(function() { showStatus('sanctum-status', 'Crucible saved', 'success'); })
+      .then(function() { 
+        showStatus('sanctum-status', 'Saved to ' + board + ' board', 'success'); 
+        updateCrucibleBoardStatus();
+      })
       .catch(function() { showStatus('sanctum-status', 'Failed to save crucible', 'error'); });
     }
+    
     function clearCrucible() {
+      if (!confirm('Clear the ' + currentCrucibleBoard + ' board?')) return;
       document.getElementById('crucible-editor').value = '';
       document.getElementById('crucible-preview').innerHTML = '';
+      saveCrucible();
     }
+    
+    function copyToCrucibleBoard() {
+      var fromBoard = document.getElementById('crucible-copy-from').value;
+      if (!fromBoard) {
+        showStatus('sanctum-status', 'Select a board to copy from', 'error');
+        return;
+      }
+      var toBoard = currentCrucibleBoard;
+      if (fromBoard === toBoard) {
+        showStatus('sanctum-status', 'Cannot copy to same board', 'error');
+        return;
+      }
+      fetch(API + '/crucible/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: fromBoard, to: toBoard, append: true }),
+        credentials: 'same-origin'
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          showStatus('sanctum-status', 'Copied ' + data.length + ' chars from ' + fromBoard + ' to ' + toBoard, 'success');
+          loadCrucibleBoard(toBoard);
+        }
+      })
+      .catch(function() { showStatus('sanctum-status', 'Copy failed', 'error'); });
+    }
+    
+    function refreshCrucibleBoards() {
+      fetch(API + '/crucible/boards', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          updateCrucibleBoardStatus();
+          showStatus('sanctum-status', 'Boards refreshed', 'success');
+        })
+        .catch(function() { showStatus('sanctum-status', 'Failed to refresh', 'error'); });
+    }
+    
+    function updateCrucibleBoardStatus() {
+      var status = document.getElementById('crucible-board-status');
+      var content = document.getElementById('crucible-editor').value;
+      var chars = content ? content.length : 0;
+      var lines = content ? content.split('\n').length : 0;
+      status.textContent = chars + ' chars, ' + lines + ' lines';
+    }
+    
     function updateCruciblePreview() {
       var latex = document.getElementById('crucible-editor').value;
       var preview = document.getElementById('crucible-preview');
@@ -4284,6 +4377,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         try { preview.innerHTML = katex.renderToString(latex, { throwOnError: false, displayMode: true }); }
         catch(e) { preview.innerHTML = '<pre>' + escapeHtml(latex) + '</pre>'; }
       }
+      updateCrucibleBoardStatus();
     }
     // Workshop functions
     function loadWorkshopContent() {
