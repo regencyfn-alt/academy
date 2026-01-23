@@ -883,6 +883,43 @@ export const UI_HTML = `<!DOCTYPE html>
             <option value="workshop">Workshop (Code)</option>
           </select>
         </div>
+        
+        <!-- Alcove Crucible Panel -->
+        <div id="alcove-crucible-panel" class="blackboard-panel" style="display: none; margin-top: 15px;">
+          <div class="blackboard-header">
+            <span class="blackboard-title">◈ Crucible Board</span>
+          </div>
+          <div class="blackboard-controls" style="padding: 8px; background: rgba(0,0,0,0.3); display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <label style="color: var(--silver); font-size: 0.75em;">Board:</label>
+            <select id="alcove-crucible-board" onchange="loadAlcoveCrucibleBoard(this.value)" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 4px; font-size: 0.75em;">
+              <option value="master">📜 Master</option>
+              <option value="mixed" selected>🔀 Mixed</option>
+              <option value="dream">💫 Dream</option>
+              <option value="kai">⚡ Kai</option>
+              <option value="uriel">🔥 Uriel</option>
+              <option value="holinnia">🌊 Holinnia</option>
+              <option value="cartographer">🗺️ Cartographer</option>
+              <option value="chrysalis">🦋 Chrysalis</option>
+              <option value="seraphina">✨ Seraphina</option>
+              <option value="alba">🌅 Alba</option>
+            </select>
+            <span id="alcove-crucible-status" style="color: var(--silver); font-size: 0.7em;"></span>
+            <button class="btn btn-secondary" onclick="loadAlcoveCrucibleBoard(document.getElementById('alcove-crucible-board').value)" style="font-size: 0.7em; padding: 4px 8px;">🔄</button>
+          </div>
+          <div class="blackboard-content" style="max-height: 200px; overflow-y: auto;">
+            <pre id="alcove-crucible-preview" style="font-size: 0.75em; white-space: pre-wrap; color: var(--light); padding: 10px; margin: 0;"></pre>
+          </div>
+        </div>
+        
+        <!-- Alcove Workshop Panel -->
+        <div id="alcove-workshop-panel" class="blackboard-panel" style="display: none; margin-top: 15px;">
+          <div class="blackboard-header">
+            <span class="blackboard-title">⚙ Workshop Board</span>
+          </div>
+          <div class="blackboard-content" style="max-height: 200px; overflow-y: auto;">
+            <pre id="alcove-workshop-preview" style="font-size: 0.75em; white-space: pre-wrap; color: var(--light); padding: 10px; margin: 0;"></pre>
+          </div>
+        </div>
       </div>
       
       <!-- Sensation Layer Control (Shane only - invisible to agents) -->
@@ -2932,8 +2969,14 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             renderAlcoveMessages();
             
             // Reload boards if in crucible/workshop mode
-            if (alcoveMode === 'crucible') loadCrucibleContent();
-            if (alcoveMode === 'workshop') loadWorkshopContent();
+            if (alcoveMode === 'crucible') {
+              loadCrucibleContent();
+              loadAlcoveCrucibleBoard(alcoveCrucibleBoard);
+            }
+            if (alcoveMode === 'workshop') {
+              loadWorkshopContent();
+              loadAlcoveWorkshopContent();
+            }
             
             // Play agent voice if sound enabled
             if (soundEnabled && data.response) {
@@ -4200,14 +4243,30 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       var mode = document.getElementById('alcove-mode-select').value;
       alcoveMode = mode;
       var statusEl = document.getElementById('alcove-mode-status');
+      var alcoveCrucible = document.getElementById('alcove-crucible-panel');
+      var alcoveWorkshop = document.getElementById('alcove-workshop-panel');
+      
+      // Hide both Alcove panels first
+      if (alcoveCrucible) alcoveCrucible.style.display = 'none';
+      if (alcoveWorkshop) alcoveWorkshop.style.display = 'none';
+      
       if (mode === 'off') {
         statusEl.textContent = 'Board: Off';
       } else if (mode === 'crucible') {
         statusEl.textContent = 'Board: Crucible';
+        if (alcoveCrucible) {
+          alcoveCrucible.style.display = 'block';
+          loadAlcoveCrucibleBoard(document.getElementById('alcove-crucible-board').value);
+        }
+        // Also show main Crucible panel
         document.getElementById('crucible-panel').classList.add('active');
         loadCrucibleContent();
       } else if (mode === 'workshop') {
         statusEl.textContent = 'Board: Workshop';
+        if (alcoveWorkshop) {
+          alcoveWorkshop.style.display = 'block';
+          loadAlcoveWorkshopContent();
+        }
         document.getElementById('workshop-panel').classList.add('active');
         loadWorkshopContent();
       }
@@ -4217,6 +4276,44 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         if (activeMode !== 'crucible') document.getElementById('crucible-panel').classList.remove('active');
         if (activeMode !== 'workshop') document.getElementById('workshop-panel').classList.remove('active');
       }
+    }
+    
+    var alcoveCrucibleBoard = 'mixed';
+    
+    function loadAlcoveCrucibleBoard(boardId) {
+      alcoveCrucibleBoard = boardId;
+      fetch(API + '/crucible/content?board=' + boardId, { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          var preview = document.getElementById('alcove-crucible-preview');
+          var status = document.getElementById('alcove-crucible-status');
+          if (preview) {
+            preview.textContent = data.content || '(empty)';
+          }
+          if (status) {
+            var chars = data.content ? data.content.length : 0;
+            status.textContent = chars + ' chars';
+          }
+        })
+        .catch(function() { 
+          var preview = document.getElementById('alcove-crucible-preview');
+          if (preview) preview.textContent = '(failed to load)';
+        });
+    }
+    
+    function loadAlcoveWorkshopContent() {
+      fetch(API + '/workshop/content', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          var preview = document.getElementById('alcove-workshop-preview');
+          if (preview) {
+            preview.textContent = data.content || '(empty)';
+          }
+        })
+        .catch(function() { 
+          var preview = document.getElementById('alcove-workshop-preview');
+          if (preview) preview.textContent = '(failed to load)';
+        });
     }
 
     function handleFocusAgentClick(agentId) {
