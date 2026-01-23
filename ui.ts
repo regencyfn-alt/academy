@@ -4462,7 +4462,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       var status = document.getElementById('crucible-board-status');
       var content = document.getElementById('crucible-editor').value;
       var chars = content ? content.length : 0;
-      var lines = content ? content.split('\n').length : 0;
+      var lines = content ? content.split('\\n').length : 0;
       status.textContent = chars + ' chars, ' + lines + ' lines';
     }
     
