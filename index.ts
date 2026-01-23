@@ -5300,7 +5300,13 @@ INSTRUCTIONS:
       // GET /crucible/content?board=<id> - get board content
       if (path === '/crucible/content' && method === 'GET') {
         const boardId = url.searchParams.get('board') || 'mixed';
-        const content = await env.CLUBHOUSE_KV.get(`crucible:${boardId}`);
+        let content = await env.CLUBHOUSE_KV.get(`crucible:${boardId}`);
+        
+        // Backward compatibility: if mixed is empty, try old crucible:content
+        if (!content && boardId === 'mixed') {
+          content = await env.CLUBHOUSE_KV.get('crucible:content');
+        }
+        
         return jsonResponse({ content: content || '', board: boardId });
       }
       
@@ -5310,6 +5316,19 @@ INSTRUCTIONS:
         const boardId = body.board || 'mixed';
         await env.CLUBHOUSE_KV.put(`crucible:${boardId}`, body.content || '');
         return jsonResponse({ success: true, board: boardId });
+      }
+
+      // POST /crucible/migrate - migrate old crucible:content to new multi-board
+      if (path === '/crucible/migrate' && method === 'POST') {
+        const oldContent = await env.CLUBHOUSE_KV.get('crucible:content');
+        if (oldContent) {
+          // Copy to mixed board
+          await env.CLUBHOUSE_KV.put('crucible:mixed', oldContent);
+          // Backup old content with timestamp
+          await env.CLUBHOUSE_KV.put(`crucible:backup:${Date.now()}`, oldContent);
+          return jsonResponse({ success: true, migrated: oldContent.length, message: 'Migrated to mixed board' });
+        }
+        return jsonResponse({ success: true, migrated: 0, message: 'No old content to migrate' });
       }
 
       // POST /crucible/copy - copy content from one board to another
