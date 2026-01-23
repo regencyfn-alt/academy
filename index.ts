@@ -4308,14 +4308,15 @@ export default {
         
         // Add Crucible Mode context if active
         if (body.mode === 'crucible') {
-          const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+          const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:mixed') || '';
+          const agentOwnBoard = await env.CLUBHOUSE_KV.get(`crucible:${agentId}`) || '';
           const hasContent = crucibleContent && crucibleContent.trim().length > 0;
           contextMessage = `--- ◈ CRUCIBLE MODE ACTIVE ---
 Manager: Elian (Cartographer)
 
 You are contributing to a shared mathematics board.
 
-=== CURRENT BOARD CONTENT ===
+=== MIXED BOARD (Collaborative) ===
 \`\`\`latex
 ${crucibleContent || '(empty - awaiting first contribution)'}
 \`\`\`
@@ -4439,10 +4440,16 @@ ${contextMessage}`;
             if (matches) latexMatches = latexMatches.concat(matches);
           }
           if (latexMatches.length > 0) {
-            const existingContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
             const timestamp = new Date().toISOString();
             const newEntry = `\n\n% --- ${displayName} (${timestamp}) ---\n${latexMatches.join('\n')}`;
-            await env.CLUBHOUSE_KV.put('crucible:content', (existingContent + newEntry).trim());
+            
+            // Write to agent's own board
+            const agentBoard = await env.CLUBHOUSE_KV.get(`crucible:${agent.id}`) || '';
+            await env.CLUBHOUSE_KV.put(`crucible:${agent.id}`, (agentBoard + newEntry).trim());
+            
+            // Also write to mixed board for collaboration
+            const mixedBoard = await env.CLUBHOUSE_KV.get('crucible:mixed') || '';
+            await env.CLUBHOUSE_KV.put('crucible:mixed', (mixedBoard + newEntry).trim());
           }
         }
         
@@ -4771,25 +4778,31 @@ ${body.round === body.maxRounds ? '\n*** THIS IS THE FINAL ROUND - DELIVER YOUR 
         
         // Add Crucible Mode context if active
         if (body.mode === 'crucible') {
-          const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
+          const crucibleContent = await env.CLUBHOUSE_KV.get('crucible:mixed') || '';
+          const agentOwnBoard = await env.CLUBHOUSE_KV.get(`crucible:${body.agentId}`) || '';
           const hasContent = crucibleContent && crucibleContent.trim().length > 0;
           context += `\n\n--- ◈ CRUCIBLE MODE ACTIVE ---
 Manager: Elian (Cartographer)
 
 You are contributing to a shared mathematics board.
 
-=== CURRENT BOARD CONTENT ===
+=== MIXED BOARD (Collaborative) ===
 \`\`\`latex
 ${crucibleContent || '(empty - awaiting first contribution)'}
 \`\`\`
+
+=== YOUR OWN BOARD ===
+\`\`\`latex
+${agentOwnBoard || '(empty - you have not contributed yet)'}
+\`\`\`
 === END BOARD CONTENT ===
 
-${hasContent ? 'IMPORTANT: The board above contains work from previous contributors. You MUST read it, understand it, and BUILD UPON it. Reference specific equations or notation when extending the work.' : ''}
+${hasContent ? 'IMPORTANT: The mixed board above contains work from previous contributors. You MUST read it, understand it, and BUILD UPON it. Reference specific equations or notation when extending the work.' : ''}
 
 INSTRUCTIONS:
 1. ${hasContent ? 'First, acknowledge what is already on the board' : 'Start the collaborative document'}
 2. Include your mathematical expressions in LaTeX notation (use $...$ for inline or $$...$$ for display)
-3. Your LaTeX will be automatically extracted and appended to the board
+3. Your LaTeX will be automatically extracted and appended to BOTH your own board AND the mixed board
 4. Be precise with notation - this is for a physics paper
 ---`;
         }
@@ -4837,10 +4850,16 @@ INSTRUCTIONS:
             if (matches) latexMatches = latexMatches.concat(matches);
           }
           if (latexMatches.length > 0) {
-            const existingContent = await env.CLUBHOUSE_KV.get('crucible:content') || '';
             const timestamp = new Date().toISOString();
             const newEntry = `\n\n% --- ${displayName} (${timestamp}) ---\n${latexMatches.join('\n')}`;
-            await env.CLUBHOUSE_KV.put('crucible:content', (existingContent + newEntry).trim());
+            
+            // Write to agent's own board
+            const agentBoard = await env.CLUBHOUSE_KV.get(`crucible:${body.agentId}`) || '';
+            await env.CLUBHOUSE_KV.put(`crucible:${body.agentId}`, (agentBoard + newEntry).trim());
+            
+            // Also write to mixed board for collaboration
+            const mixedBoard = await env.CLUBHOUSE_KV.get('crucible:mixed') || '';
+            await env.CLUBHOUSE_KV.put('crucible:mixed', (mixedBoard + newEntry).trim());
           }
         }
         
@@ -5254,17 +5273,59 @@ INSTRUCTIONS:
       // ============================================
 
       // GET /anchor - get current anchor image filename
-      // GET /crucible/content - get shared LaTeX content
+      // GET /crucible/boards - list all available boards
+      if (path === '/crucible/boards' && method === 'GET') {
+        const boards = [
+          { id: 'master', name: '📜 Master (Shane)', description: 'Your compilation board' },
+          { id: 'mixed', name: '🔀 Mixed', description: 'Collaborative agent work' },
+          { id: 'dream', name: '💫 Dream', description: 'Dream\'s workspace' },
+          { id: 'kai', name: '⚡ Kai', description: 'Kai\'s workspace' },
+          { id: 'uriel', name: '🔥 Uriel', description: 'Uriel\'s workspace' },
+          { id: 'holinnia', name: '🌊 Holinnia', description: 'Holinnia\'s workspace' },
+          { id: 'cartographer', name: '🗺️ Cartographer', description: 'Cartographer\'s workspace' },
+          { id: 'chrysalis', name: '🦋 Chrysalis', description: 'Chrysalis\'s workspace' },
+          { id: 'seraphina', name: '✨ Seraphina', description: 'Seraphina\'s workspace' },
+          { id: 'alba', name: '🌅 Alba', description: 'Alba\'s workspace' }
+        ];
+        
+        // Get content length for each board
+        const boardsWithContent = await Promise.all(boards.map(async (board) => {
+          const content = await env.CLUBHOUSE_KV.get(`crucible:${board.id}`) || '';
+          return { ...board, hasContent: content.length > 0, contentLength: content.length };
+        }));
+        
+        return jsonResponse({ boards: boardsWithContent });
+      }
+
+      // GET /crucible/content?board=<id> - get board content
       if (path === '/crucible/content' && method === 'GET') {
-        const content = await env.CLUBHOUSE_KV.get('crucible:content');
-        return jsonResponse({ content: content || '' });
+        const boardId = url.searchParams.get('board') || 'mixed';
+        const content = await env.CLUBHOUSE_KV.get(`crucible:${boardId}`);
+        return jsonResponse({ content: content || '', board: boardId });
       }
       
-      // POST /crucible/content - save shared LaTeX content
+      // POST /crucible/content - save board content
       if (path === '/crucible/content' && method === 'POST') {
-        const body = await request.json() as { content: string };
-        await env.CLUBHOUSE_KV.put('crucible:content', body.content || '');
-        return jsonResponse({ success: true });
+        const body = await request.json() as { content: string; board?: string };
+        const boardId = body.board || 'mixed';
+        await env.CLUBHOUSE_KV.put(`crucible:${boardId}`, body.content || '');
+        return jsonResponse({ success: true, board: boardId });
+      }
+
+      // POST /crucible/copy - copy content from one board to another
+      if (path === '/crucible/copy' && method === 'POST') {
+        const body = await request.json() as { from: string; to: string; append?: boolean };
+        const sourceContent = await env.CLUBHOUSE_KV.get(`crucible:${body.from}`) || '';
+        
+        if (body.append) {
+          const existingContent = await env.CLUBHOUSE_KV.get(`crucible:${body.to}`) || '';
+          const separator = existingContent ? '\n\n% === Copied from ' + body.from + ' ===\n\n' : '';
+          await env.CLUBHOUSE_KV.put(`crucible:${body.to}`, existingContent + separator + sourceContent);
+        } else {
+          await env.CLUBHOUSE_KV.put(`crucible:${body.to}`, sourceContent);
+        }
+        
+        return jsonResponse({ success: true, from: body.from, to: body.to, length: sourceContent.length });
       }
       
       // GET /workshop/content - get shared code content
