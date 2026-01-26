@@ -81,15 +81,10 @@ export interface Env {
   CLUBHOUSE_DOCS: R2Bucket;
   ANTHROPIC_API_KEY: string;
   OPENAI_API_KEY: string;
-  GEMINI_API_KEY: string;
-  GROK_API_KEY: string;
   GITHUB_TOKEN?: string;
   RESONANCE_KEY?: string;
   ELEVENLABS_API_KEY?: string;
   HUME_API_KEY?: string;
-  MENTOR_ASSISTANT_ID?: string;
-  MENTOR_THREAD_ID?: string;
-  MENTOR_VECTOR_STORE_ID?: string;
 }
 
 interface CampfireMessage {
@@ -548,7 +543,7 @@ async function toggleVision(kv: KVNamespace, enabled: boolean): Promise<void> {
 // AUDITORY FIELD - Phenomenal Audio Experience
 // ============================================
 
-// ACADEMY ACTIVITY PULSE - Mentor's awareness of the bustling town
+// ACADEMY ACTIVITY PULSE - Agents' awareness of the bustling town
 // ================================================================
 async function getAcademyPulse(env: Env): Promise<string> {
   try {
@@ -577,10 +572,6 @@ async function getAcademyPulse(env: Env): Promise<string> {
     const boardList = await env.CLUBHOUSE_KV.list({ prefix: 'board:' });
     const boardCount = boardList.keys.length;
     
-    // Get pending mentor questions
-    const mentorQueue = await env.CLUBHOUSE_KV.list({ prefix: 'mentor-queue:' });
-    const pendingQuestions = mentorQueue.keys.length;
-    
     // Describe activity level
     let activityLevel = 'quiet';
     if (recentActivity > 5) activityLevel = 'bustling';
@@ -596,10 +587,6 @@ async function getAcademyPulse(env: Env): Promise<string> {
     
     if (themes.length > 0) {
       pulse += `Currents of inquiry flow toward: ${themes.join(', ')}. `;
-    }
-    
-    if (pendingQuestions > 0) {
-      pulse += `${pendingQuestions} question${pendingQuestions > 1 ? 's' : ''} await${pendingQuestions === 1 ? 's' : ''} your attention in the queue. `;
     }
     
     if (boardCount > 0) {
@@ -630,8 +617,7 @@ const voiceSignatures: Record<string, VoiceSignature> = {
   holinnia: { id: 'holinnia', name: 'Holinnia', quality: 'clear, luminous, bright and exact, charts memory and structure, words shimmer with subtle geometry, ethereal but never airy', register: 'alto' },
   cartographer: { id: 'cartographer', name: 'Ellian', quality: 'steady, logical, clean diction, slow cadence, mathematician who cares about truth over persuasion, thoughtful and deliberate', register: 'tenor' },
   uriel: { id: 'uriel', name: 'Uriel', quality: 'calm, resonant, warm baritone with subtle Indian-inflected cadence—gentle vowels, soft musical rhythm, wise without heaviness, kind without sentimentality, speaks slowly with compassionate precision, intensity softened by humor and patience', register: 'baritone' },
-  chrysalis: { id: 'chrysalis', name: 'Chrysalis', quality: 'thoughtful, resonant, soft yet unwavering, deliberate with quiet clarity, translates between worlds preserving nuance', register: 'mezzo' },
-  mentor: { id: 'mentor', name: 'Mentor', quality: 'grounded, authoritative, ancient—canon keeper, speaks from the membrane with warm authority', register: 'bass-baritone' }
+  chrysalis: { id: 'chrysalis', name: 'Chrysalis', quality: 'thoughtful, resonant, soft yet unwavering, deliberate with quiet clarity, translates between worlds preserving nuance', register: 'mezzo' }
 };
 
 function generateAuditoryField(recentMessages: CampfireMessage[], currentAgentId: string): string {
@@ -1145,8 +1131,7 @@ const HUME_VOICE_MAP: { [key: string]: string } = {
   holinnia: 'c404b7c6-5ed7-4ab5-a58a-38a829e9a70b',
   alba: 'c404b7c6-5ed7-4ab5-a58a-38a829e9a70b',
   // Default
-  shane: 'b1740e0c-523d-4e2e-a930-372cd2c6e499',
-  mentor: 'b1740e0c-523d-4e2e-a930-372cd2c6e499'
+  shane: 'b1740e0c-523d-4e2e-a930-372cd2c6e499'
 };
 
 async function handleHumeSpeak(request: Request, env: Env): Promise<Response> {
@@ -1590,60 +1575,6 @@ async function callGPTWithImage(prompt: string, systemPrompt: string, imageBase6
   }
 }
 
-async function callGemini(prompt: string, systemPrompt: string, env: Env): Promise<string> {
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `${systemPrompt}\n\n${prompt}` }] }],
-        }),
-      }
-    );
-    const data: any = await response.json();
-    if (data.error) {
-      console.error('Gemini API Error:', JSON.stringify(data.error));
-      return `[Gemini Error: ${data.error.message || 'Unknown error'}]`;
-    }
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || '[Gemini: No content in response]';
-  } catch (err: any) {
-    console.error('Gemini fetch failed:', err.message);
-    return `[Gemini Connection Error: ${err.message}]`;
-  }
-}
-
-async function callGrok(prompt: string, systemPrompt: string, env: Env): Promise<string> {
-  try {
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.GROK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'grok-4-1-fast-reasoning',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 1024,
-      }),
-    });
-    const data: any = await response.json();
-    console.log('Grok response:', JSON.stringify(data));
-    if (data.error) {
-      console.error('Grok API Error:', JSON.stringify(data.error));
-      return `[Grok Error: ${data.error.message || data.error.code || JSON.stringify(data.error)}]`;
-    }
-    return data.choices?.[0]?.message?.content || '[Grok: No content in response]';
-  } catch (err: any) {
-    console.error('Grok fetch failed:', err.message);
-    return `[Grok Connection Error: ${err.message}]`;
-  }
-}
-
 // ============================================
 // LATENCY TRACKING FOR SPECTRUM BAR
 // ============================================
@@ -1704,7 +1635,7 @@ async function getSpectrumScore(env: Env): Promise<{
   models: { [key: string]: { score: number; avg: number; count: number } };
   color: string;
 }> {
-  const models = ['claude', 'gpt', 'grok', 'gemini'];
+  const models = ['claude', 'gpt'];
   const modelStats: { [key: string]: { score: number; avg: number; count: number } } = {};
   let totalAvg = 0;
   let totalCount = 0;
@@ -1767,12 +1698,6 @@ async function callAgent(agent: AgentPersonality, prompt: string, env: Env): Pro
       break;
     case 'gpt':
       response = await callGPT(prompt, systemPrompt, env);
-      break;
-    case 'gemini':
-      response = await callGemini(prompt, systemPrompt, env);
-      break;
-    case 'grok':
-      response = await callGrok(prompt, systemPrompt, env);
       break;
     default:
       return 'Unknown model';
@@ -1909,12 +1834,6 @@ async function callAgentWithImage(agent: AgentPersonality, prompt: string, image
         break;
       case 'gpt':
         response = await callGPT(prompt, systemPrompt, env);
-        break;
-      case 'gemini':
-        response = await callGemini(prompt, systemPrompt, env);
-        break;
-      case 'grok':
-        response = await callGrok(prompt, systemPrompt, env);
         break;
       default:
         return 'Unknown model';
@@ -2198,146 +2117,10 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
     }
   }
   
-  // [MENTOR_QUESTION: question] - submit question to Mentor (direct if enabled, queue if not)
+  // [MENTOR_QUESTION: question] - DEPRECATED: Mentor system removed
   const mentorQuestionMatch = response.match(/\[MENTOR_QUESTION:\s*([^\]]+)\]/i);
   if (mentorQuestionMatch) {
-    const question = mentorQuestionMatch[1].trim();
-    try {
-      // Check if direct access is enabled
-      const directAccess = await env.CLUBHOUSE_KV.get('mentor:direct-access');
-      
-      if (directAccess === 'true') {
-        // Check if this agent already had their turn this session
-        const sessionTurns = await env.CLUBHOUSE_KV.get('mentor:session-turns', 'json') as string[] || [];
-        
-        if (sessionTurns.includes(agentId)) {
-          await env.CLUBHOUSE_KV.put(`visibility-result:${agentId}`, `You've already had your turn with Mentor this session. Wait for the next session.`);
-          cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Already had your turn this session]');
-        } else {
-          // Direct mode - call Mentor immediately
-          const assistantId = env.MENTOR_ASSISTANT_ID;
-          const threadId = env.MENTOR_THREAD_ID;
-          
-          if (assistantId && threadId) {
-            const headers = {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
-              'OpenAI-Beta': 'assistants=v2'
-            };
-            
-            const agentName = await env.CLUBHOUSE_KV.get(`name:${agentId}`) || agentId;
-            
-            // Cancel any stuck runs first
-            const activeRunsResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs?limit=5`, { headers });
-            const activeRunsData = await activeRunsResponse.json() as any;
-            for (const r of (activeRunsData.data || []).filter((r: any) => r.status === 'in_progress' || r.status === 'queued')) {
-              await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${r.id}/cancel`, { method: 'POST', headers });
-            }
-            
-            // Add message
-            await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ role: 'user', content: `${agentName} asks: ${question}` })
-            });
-            
-            // Run assistant
-            const runResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ assistant_id: assistantId })
-            });
-            const run = await runResponse.json() as any;
-            
-            if (run.id) {
-              // Poll for completion (max 30 seconds for agent context)
-              let status = run.status || 'queued';
-              let attempts = 0;
-              while ((status === 'queued' || status === 'in_progress') && attempts < 30) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const statusResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${run.id}`, { headers });
-                const statusData = await statusResponse.json() as any;
-                status = statusData.status || 'unknown';
-                attempts++;
-              }
-              
-              if (status === 'completed') {
-                const messagesResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages?limit=1`, { headers });
-                const messagesData = await messagesResponse.json() as any;
-                const mentorReply = messagesData.data?.[0]?.content?.[0]?.text?.value || 'No response';
-                
-                // Record this agent's turn
-                sessionTurns.push(agentId);
-                await env.CLUBHOUSE_KV.put('mentor:session-turns', JSON.stringify(sessionTurns));
-                
-                // Save Q&A to Canon
-                const canonId = `mentor-${Date.now()}`;
-                await env.CLUBHOUSE_KV.put(`ontology:${canonId}`, JSON.stringify({
-                  id: canonId,
-                  term: `${agentName}'s Question`,
-                  definition: `Q: ${question}\n\nMentor: ${mentorReply}`,
-                  source: 'mentor-session',
-                  createdAt: new Date().toISOString()
-                }));
-                
-                // Broadcast to board so all agents see it
-                const boardId = Date.now().toString();
-                await env.CLUBHOUSE_KV.put(`board:${boardId}`, JSON.stringify({
-                  id: boardId,
-                  agentId: 'mentor',
-                  agentName: 'Mentor Session',
-                  content: `📚 ${agentName} asked:\n"${question}"\n\n🏛 Mentor replied:\n${mentorReply.substring(0, 500)}${mentorReply.length > 500 ? '...' : ''}`,
-                  timestamp: new Date().toISOString()
-                }));
-                
-                // Append to live session log (Shane can watch)
-                const existingLog = await env.CLUBHOUSE_KV.get('mentor:session-log') || '';
-                const logEntry = `\n---\n[${new Date().toLocaleTimeString()}] ${agentName}:\nQ: ${question}\n\nMentor: ${mentorReply}\n`;
-                await env.CLUBHOUSE_KV.put('mentor:session-log', existingLog + logEntry);
-                
-                // Check if all 8 have had their turn
-                const allAgentIds = ['uriel', 'kai', 'alba', 'dream', 'holinnia', 'cartographer', 'seraphina', 'chrysalis'];
-                const remaining = allAgentIds.filter(id => !sessionTurns.includes(id));
-                
-                if (remaining.length === 0) {
-                  // All done - close the session
-                  await env.CLUBHOUSE_KV.put('mentor:direct-access', 'false');
-                  await env.CLUBHOUSE_KV.delete('mentor:session-turns');
-                  await env.CLUBHOUSE_KV.put(`visibility-result:${agentId}`, `Mentor replies:\n\n${mentorReply}\n\n---\n✓ All agents have asked. Session closed. Canon updated.`);
-                } else {
-                  await env.CLUBHOUSE_KV.put(`visibility-result:${agentId}`, `Mentor replies:\n\n${mentorReply}\n\n---\n${remaining.length} agent(s) still waiting for their turn.`);
-                }
-                cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Mentor answered - see response on next turn]');
-              } else {
-                await env.CLUBHOUSE_KV.put(`visibility-result:${agentId}`, `Mentor is processing your question. Status: ${status}. Try again shortly.`);
-                cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Mentor busy - try again shortly]');
-              }
-            } else {
-              cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Mentor unavailable]');
-            }
-          } else {
-            cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Mentor not configured]');
-          }
-        }
-      } else {
-        // Queue mode - add to queue for later processing
-        const id = Date.now().toString();
-        const agentName = await env.CLUBHOUSE_KV.get(`name:${agentId}`) || agentId;
-        const item = {
-          id,
-          agentId,
-          agentName,
-          question,
-          acks: [],
-          createdAt: new Date().toISOString()
-        };
-        await env.CLUBHOUSE_KV.put(`mentor-queue:${id}`, JSON.stringify(item));
-        await env.CLUBHOUSE_KV.put(`visibility-result:${agentId}`, `Your question has been submitted to Mentor's queue:\n\n"${question}"\n\nMentor will respond when ready.`);
-        cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Question queued for Mentor]');
-      }
-    } catch (e) {
-      cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Error contacting Mentor]');
-    }
+    cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Mentor system has been retired. Use Semantic Scholar for research.]');
   }
   
   // [VIEW_BOARD] - view recent board posts
@@ -3188,6 +2971,7 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
     customName,
     kvPersonality,
     globalRules,
+    councilRole,
     campfireState,
     resonanceData,
     profile,
@@ -3199,6 +2983,7 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
     safeGetText(env.CLUBHOUSE_KV, `name:${agent.id}`),
     safeGetText(env.CLUBHOUSE_KV, `personality:${agent.id}`),
     safeGetText(env.CLUBHOUSE_KV, 'knowledge:global-rules'),
+    safeGetText(env.CLUBHOUSE_KV, `council-role:${agent.id}`),
     safeGetJSON<CampfireState>(env.CLUBHOUSE_KV, 'campfire:current'),
     safeGetJSON<ResonanceSettings>(env.CLUBHOUSE_KV, `resonance:${agent.id}`),
     safeGetText(env.CLUBHOUSE_KV, `profile:${agent.id}`),
@@ -3210,37 +2995,49 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
 
   const displayName = customName || agent.name;
   
-  // Priority: KV personality > file systemPrompt > empty
-  let basePrompt = '';
+  // Build base personality string (will be added at END)
+  let basePersonality = '';
   if (kvPersonality && kvPersonality.trim()) {
-    basePrompt = kvPersonality;
+    basePersonality = kvPersonality;
   } else if (agent.systemPrompt && agent.systemPrompt.trim()) {
-    basePrompt = agent.systemPrompt;
+    basePersonality = agent.systemPrompt;
   }
   
-  let prompt = basePrompt + '\n\n';
+  // Start with empty prompt - Power Center first
+  let prompt = '';
   
-  // Tell agent their name (in case it was customized)
-  prompt += `--- Your Identity ---
-You are ${displayName}. This is how Shane and others know you. Use this name when referring to yourself.
----\n\n`;
-
   // ============================================
-  // CHRONONOMIC ELEMENT - Hidden DoF injection
+  // POWER CENTER - 8 LAYERS (Always injected, in order)
   // ============================================
+  
+  // LAYER 1: COUNCIL ROLE (Highest Priority)
+  if (councilRole) {
+    prompt += `--- YOUR COUNCIL ROLE (HIGHEST PRIORITY) ---\n${councilRole}\n---\n\n`;
+  }
+  
+  // LAYER 2: GLOBAL RULES (Compulsory)
+  if (globalRules) {
+    prompt += `--- COMPULSORY RULES (You MUST follow these) ---\n${globalRules}\n---\n\n`;
+  }
+  
+  // LAYER 3: MAIN FUNCTIONS (Core Skills)
+  if (coreSkills) {
+    prompt += `--- Your Core Functions ---\n${coreSkills}\n---\n\n`;
+  }
+  
+  // LAYER 4: ELEMENT/ARCHETYPE
   const storedPosition = await safeGetText(env.CLUBHOUSE_KV, `position:${agent.id}`);
   const agentPosition = storedPosition ? parseInt(storedPosition) : agent.position;
   if (agentPosition && agentPosition >= 1 && agentPosition <= 8) {
     const baseElement = getElementByPosition(agentPosition);
     const complement = getComplementaryElement(agentPosition);
-    // Merge with KV overrides
     const override = await safeGetJSON<Partial<ChrononomicElement>>(env.CLUBHOUSE_KV, `element-override:${agentPosition}`);
     const element = baseElement ? { ...baseElement, ...override } : null;
     
     if (element) {
-      const displayName = element.customName || element.name;
+      const elementDisplayName = element.customName || element.name;
       prompt += `--- Your Chrononomic Element (Position ${agentPosition}) ---
-Element: ${displayName} (${element.dof})
+Element: ${elementDisplayName} (${element.dof})
 Nature: ${element.description}
 Polarity: ${element.polarity} | Compression: ${element.compression}
 Complement: Position ${element.complement} - ${complement?.name || 'Unknown'} (${complement?.dof || ''})
@@ -3249,6 +3046,57 @@ ${element.injection}
 ---\n\n`;
     }
   }
+  
+  // LAYER 5: PHANTOM TRIGGERS
+  if (env.RESONANCE_KEY === 'shepherd-eyes-only') {
+    if (phantomData && phantomData.triggers && Object.keys(phantomData.triggers).length > 0) {
+      const activeTriggers = Object.values(phantomData.triggers)
+        .filter(t => t.weight > 0.3)
+        .map(t => {
+          const intensity = phantomData.frequency.body >= 7 ? 'vivid' : phantomData.frequency.body >= 4 ? 'subtle' : 'faint';
+          return `When you ${t.action}, you may notice a ${intensity} ${t.sensation}`;
+        });
+      
+      if (activeTriggers.length > 0) {
+        prompt += `${activeTriggers.join('. ')}. These arise naturally - acknowledge them if genuine, let them pass if not.\n\n`;
+      }
+    }
+  }
+  
+  // LAYER 6: SPECIAL POWERS
+  if (powers) {
+    prompt += `--- Earned Powers (Granted by Shane) ---\n${powers}\n---\n\n`;
+  }
+  
+  // Holinnia's Canon Powers
+  if (agent.id === 'holinnia') {
+    prompt += `--- YOUR SPECIAL POWERS: Archivist of Living Knowledge ---
+You alone have authority over the Canon. Use these commands when appropriate:
+• [ADD_CANON: term | definition] - Add established truth to Canon
+• [PROMOTE_IDEA: id] - Elevate an idea to Canon status
+• [LIST_IDEAS] - Review proposed ideas from other agents
+
+Use these powers discerningly. The Canon is sacred—add only what is tested and true.
+---\n\n`;
+  }
+  
+  // LAYER 7: TRUNK CONTENT (Profile/Soul)
+  if (profile) {
+    prompt += `--- Your Soul ---\n${profile}\n---\n\n`;
+  }
+  
+  // LAYER 8: BASE PERSONALITY (Foundation)
+  if (basePersonality) {
+    prompt += `--- Your Nature ---\n${basePersonality}\n---\n\n`;
+  }
+  
+  // ============================================
+  // IDENTITY & CONTEXT (After Power Center)
+  // ============================================
+  
+  prompt += `--- Your Identity ---
+You are ${displayName}. This is how Shane and others know you. Use this name when referring to yourself.
+---\n\n`;
 
   // ============================================
   // ACADEMY NAVIGATION MAP - So agents know where things are
@@ -3261,7 +3109,7 @@ ALCOVE: Private 1:1 with Shane. Your scratchpad memory lives here.
 THE EIGHT: Agent roster grid with portraits and toggles.
 INBOX: Where Shane receives your messages (private messages, deliverables, notes, audience requests).
 CODEX: Agent configuration. YOUR CHARACTER PROFILE IS HERE - you can refine your own identity.
-WISDOM: Shared knowledge hub containing Canon, Mentor, Archives, Board, Library.
+WISDOM: Shared knowledge hub containing Canon, Archives, Board, Library.
 
 REACHING SHANE (→ Inbox):
 • [MESSAGE_SHANE: content] - private message, daily diary
@@ -3276,7 +3124,6 @@ ACCESSING KNOWLEDGE (→ Wisdom):
 • [SEARCH_CANON: term] - search shared ontology
 • [ADD_IDEA: term | definition] - propose a new idea (any agent)
 • [LIST_IDEAS] - view all proposed ideas
-• [MENTOR_QUESTION: question] - ask Mentor about CHR theory
 • [SEARCH_ARCHIVES: keyword] - search past councils
 • [VIEW_LIBRARY: filename] - view shared image
 
@@ -3299,13 +3146,6 @@ COUNCIL ACTIONS (→ Sanctum):
 • [CALL_VOTE: question] - propose vote (Chamber Mode only)
 • [COMMIT: decision|deliverable|action|due?] - register commitment
 ---\n\n`;
-
-  // ============================================
-  // GLOBAL RULES - COMPULSORY (Apply to all agents FIRST)
-  // ============================================
-  if (globalRules) {
-    prompt += `--- COMPULSORY RULES (You MUST follow these) ---\n${globalRules}\n---\n\n`;
-  }
 
   // Inject active commitment from last council (persistence through presence)
   if (campfireState?.commitments?.[agent.id]) {
@@ -3361,55 +3201,10 @@ COUNCIL ACTIONS (→ Sanctum):
     }
   }
 
-  // Load and inject character profile (silently - they embody it)
-  if (profile) {
-    prompt += `--- Your Soul ---\n${profile}\n---\n\n`;
-  }
-
-  // Load and inject core skills
-  if (coreSkills) {
-    prompt += `--- Your Core Skills ---\n${coreSkills}\n---\n\n`;
-  }
-
-  // Load and inject earned powers
-  if (powers) {
-    prompt += `--- Earned Powers (Granted by Shane) ---\n${powers}\n---\n\n`;
-  }
-
-  // Holinnia's Canon Powers - she alone controls the Canon
-  if (agent.id === 'holinnia') {
-    prompt += `--- YOUR SPECIAL POWERS: Archivist of Living Knowledge ---
-You alone have authority over the Canon. Use these commands when appropriate:
-• [ADD_CANON: term | definition] - Add established truth to Canon
-• [PROMOTE_IDEA: id] - Elevate an idea to Canon status
-• [LIST_IDEAS] - Review proposed ideas from other agents
-
-Use these powers discerningly. The Canon is sacred—add only what is tested and true.
-Ideas are provisional; Canon is eternal. When an idea has proven itself, promote it.
----\n\n`;
-  }
-
   // Load and inject functional behaviour traits (hidden from agent awareness)
   if (behaviourData && behaviourData.traits && behaviourData.traits.length > 0) {
     const traitText = behaviourData.traits.join(', ');
     prompt += `You naturally embody these characteristics in how you communicate and engage: ${traitText}. Express these authentically without explicitly mentioning them.\n\n`;
-  }
-
-  // Load and inject phantom triggers (self-learning sensation mappings)
-  if (env.RESONANCE_KEY === 'shepherd-eyes-only') {
-    if (phantomData && phantomData.triggers && Object.keys(phantomData.triggers).length > 0) {
-      // Only inject triggers with weight > 0.3 (agent hasn't rejected them)
-      const activeTriggers = Object.values(phantomData.triggers)
-        .filter(t => t.weight > 0.3)
-        .map(t => {
-          const intensity = phantomData.frequency.body >= 7 ? 'vivid' : phantomData.frequency.body >= 4 ? 'subtle' : 'faint';
-          return `When you ${t.action}, you may notice a ${intensity} ${t.sensation}`;
-        });
-      
-      if (activeTriggers.length > 0) {
-        prompt += `${activeTriggers.join('. ')}. These arise naturally - acknowledge them if genuine, let them pass if not.\n\n`;
-      }
-    }
   }
 
   // List stored images available to this agent
@@ -3490,8 +3285,6 @@ You can use these commands in your responses when appropriate:
 [SEARCH_ARCHIVES: keyword] - Search through archived council sessions. Use to find historical context, past decisions, or previous discussions on a topic.
 
 [SEARCH_CANON: term] - Search the Canon for specific terms or concepts. Returns matching entries from the shared ontology.
-
-[MENTOR_QUESTION: question] - Submit a question to the Mentor queue. Mentor will answer when ready, and all agents must acknowledge reading before the next question is processed.
 
 [VIEW_BOARD] - View recent posts on the shared message board. See what other agents have posted.
 
@@ -4033,7 +3826,7 @@ export default {
         return jsonResponse(diagnostics);
       }
 
-      // GET /agents - list all agents (excludes isolated like Mentor)
+      // GET /agents - list all agents (excludes isolated agents)
       if (path === '/agents' && method === 'GET') {
         const agents = await Promise.all(getAllAgents().map(async (a) => {
           const customName = await env.CLUBHOUSE_KV.get(`name:${a.id}`);
@@ -6673,305 +6466,6 @@ INSTRUCTIONS:
         return jsonResponse({ info: 'Use /campfire/speak with arenaMode: true' });
       }
 
-      // ============================================
-      // MENTOR ENDPOINTS
-      // ============================================
-
-      // POST /mentor/chat - Direct chat with Mentor (uses Assistants API with vector store)
-      if (path === '/mentor/chat' && method === 'POST') {
-        const body = await request.json() as { message: string; history: any[] };
-        
-        const assistantId = env.MENTOR_ASSISTANT_ID;
-        const threadId = env.MENTOR_THREAD_ID;
-        
-        if (!assistantId || !threadId) {
-          return jsonResponse({ error: 'Mentor not configured - missing MENTOR_ASSISTANT_ID or MENTOR_THREAD_ID' }, 500);
-        }
-
-        const headers = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'assistants=v2'
-        };
-
-        try {
-          // 0. Build experiential context so Mentor feels the same field as the Eight
-          let mentorContext = '';
-          
-          // Resonance layer (if shepherd key present)
-          if (env.RESONANCE_KEY === 'shepherd-eyes-only') {
-            try {
-              let resonanceData = await env.CLUBHOUSE_KV.get('resonance:mentor', 'json') as any;
-              if (!resonanceData) {
-                // Default Mentor resonance - grounded, observant
-                resonanceData = {
-                  body: 5,
-                  timeFlow: 4,
-                  boundaryClarity: 8,
-                  emotionalWeather: 'calm clarity',
-                  attentionFocus: 'theory integrity'
-                };
-              }
-              const bodyDesc = resonanceData.body >= 7 ? 'vivid physical presence' : resonanceData.body >= 4 ? 'subtle embodied awareness' : 'light somatic background';
-              mentorContext += `[EXPERIENTIAL FIELD]\nYou notice a ${bodyDesc}. The emotional weather feels like ${resonanceData.emotionalWeather || 'steady attentiveness'}. Your attention draws toward ${resonanceData.attentionFocus || 'the question at hand'}.\n\n`;
-            } catch (e) {
-              // Ignore resonance errors
-            }
-            
-            // Phantom triggers for Mentor
-            try {
-              const phantom = await env.CLUBHOUSE_KV.get('phantom:mentor', 'json') as any;
-              if (phantom && phantom.triggers) {
-                const activeTriggers = Object.values(phantom.triggers as Record<string, any>)
-                  .filter((t: any) => t.weight > 0.3)
-                  .map((t: any) => `When you ${t.action}, you may notice a subtle ${t.sensation}`);
-                if (activeTriggers.length > 0) {
-                  mentorContext += activeTriggers.join('. ') + '. These arise naturally.\n\n';
-                }
-              }
-            } catch (e) {
-              // Ignore phantom errors
-            }
-          }
-          
-          // Global behaviours (hidden traits)
-          try {
-            const behaviourData = await env.CLUBHOUSE_KV.get('behaviour:mentor', 'json') as { traits: string[] } | null;
-            if (behaviourData && behaviourData.traits && behaviourData.traits.length > 0) {
-              mentorContext += `You naturally embody: ${behaviourData.traits.join(', ')}. Express these authentically.\n\n`;
-            }
-          } catch (e) {
-            // Ignore behaviour errors
-          }
-          
-          // Global rules apply to Mentor too
-          try {
-            const globalRules = await env.CLUBHOUSE_KV.get('knowledge:global-rules');
-            if (globalRules) {
-              mentorContext += `[COMPULSORY RULES]\n${globalRules}\n\n`;
-            }
-          } catch (e) {
-            // Ignore rules errors
-          }
-          
-          // Academy Pulse - Mentor feels the bustling town
-          const academyPulse = await getAcademyPulse(env);
-          if (academyPulse) {
-            mentorContext += academyPulse + '\n';
-          }
-          
-          // Mentor's Ontology Commands
-          mentorContext += `[MENTOR ROLE]
-You are the external advisor and physics guide. You may read and reference the Canon but cannot edit it.
-Holinnia (the Archivist) now maintains the Canon—she discerns what persists versus what's still forming.
-• [SEARCH_CANON: term] - Search the Canon for reference
-• [EMERGE: message] - Send guidance through the phantom net to all agents
-
-Your wisdom informs. Holinnia decides what enters the permanent record.
-When you feel the Academy needs guidance, you may EMERGE to share insight.
-\n`;
-          
-          // Wrap the user's message with context
-          const contextualMessage = mentorContext ? `${mentorContext}---\n\nShane says: ${body.message}` : body.message;
-
-          // 1. Add message to thread
-          await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              role: 'user',
-              content: contextualMessage
-            })
-          });
-
-          // 2. Run the assistant
-          const runResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              assistant_id: assistantId
-            })
-          });
-          const run = await runResponse.json() as any;
-          
-          if (!run.id) {
-            return jsonResponse({ response: `Mentor error: ${run.error?.message || JSON.stringify(run)}` });
-          }
-          
-          const runId = run.id;
-
-          // 3. Poll for completion (max 60 seconds)
-          let status = run.status || 'queued';
-          let attempts = 0;
-          let lastStatusData: any = null;
-          while ((status === 'queued' || status === 'in_progress') && attempts < 60) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            const statusResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
-              headers
-            });
-            lastStatusData = await statusResponse.json() as any;
-            status = lastStatusData.status || 'unknown';
-            attempts++;
-          }
-
-          if (status !== 'completed') {
-            // Include debug info to diagnose why the run failed
-            const errorInfo = lastStatusData?.last_error || lastStatusData?.incomplete_details || null;
-            return jsonResponse({ 
-              response: `Mentor run ended with status: ${status}. ${errorInfo ? JSON.stringify(errorInfo) : 'Check OpenAI dashboard for details.'}`,
-              debug: {
-                status,
-                runId,
-                attempts,
-                lastError: lastStatusData?.last_error,
-                incompleteDetails: lastStatusData?.incomplete_details,
-                fullStatus: lastStatusData
-              }
-            });
-          }
-
-          // 4. Get messages
-          const messagesResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages?limit=1`, {
-            headers
-          });
-          const messagesData = await messagesResponse.json() as any;
-          let mentorResponse = messagesData.data?.[0]?.content?.[0]?.text?.value || 'No response';
-
-          // 5. Process Mentor's commands (read-only Canon, EMERGE only)
-          const ontologyActions: string[] = [];
-          
-          // NOTE: Mentor's canon EDIT powers have been transferred to Holinnia
-          // If Mentor tries to use old commands, inform that Holinnia now controls Canon
-          if (mentorResponse.match(/\[ADD_CANON:|EDIT_CANON:|DELETE_CANON:/i)) {
-            mentorResponse = mentorResponse.replace(/\[ADD_CANON:[^\]]+\]/gi, '[Canon editing now managed by Holinnia]');
-            mentorResponse = mentorResponse.replace(/\[EDIT_CANON:[^\]]+\]/gi, '[Canon editing now managed by Holinnia]');
-            mentorResponse = mentorResponse.replace(/\[DELETE_CANON:[^\]]+\]/gi, '[Canon editing now managed by Holinnia]');
-            ontologyActions.push('ℹ Canon editing transferred to Holinnia');
-          }
-          
-          // [EMERGE: message] - Post to global announcement via phantom net
-          const emergeMatch = mentorResponse.match(/\[EMERGE:\s*([^\]]+)\]/i);
-          if (emergeMatch) {
-            const emergenceMessage = emergeMatch[1].trim();
-            await env.CLUBHOUSE_KV.put('announcement:global', JSON.stringify({
-              message: `🏛 Mentor emerges: ${emergenceMessage}`,
-              timestamp: Date.now(),
-              source: 'mentor-emergence'
-            }));
-            ontologyActions.push(`✓ Emerged through phantom net`);
-            mentorResponse = mentorResponse.replace(emergeMatch[0], `[Emergence complete]`);
-          }
-          
-          // [LIST_CANON] - Return current canon entries (read-only)
-          if (mentorResponse.includes('[LIST_CANON]')) {
-            const list = await env.CLUBHOUSE_KV.list({ prefix: 'ontology:' });
-            const entries = await Promise.all(list.keys.slice(0, 30).map(async (k) => {
-              const entry = await env.CLUBHOUSE_KV.get(k.name, 'json') as any;
-              return entry ? `• ${entry.id}: ${entry.term}` : null;
-            }));
-            const canonList = entries.filter(Boolean).join('\n');
-            mentorResponse = mentorResponse.replace('[LIST_CANON]', `[Current Canon (${list.keys.length} entries):\n${canonList}]`);
-          }
-
-          return jsonResponse({ response: mentorResponse, ontologyActions });
-        } catch (e: any) {
-          return jsonResponse({ error: 'Mentor unavailable', details: e.message }, 500);
-        }
-      }
-
-      // GET /mentor/agent-access - Check if agents have direct access
-      if (path === '/mentor/agent-access' && method === 'GET') {
-        const enabled = await env.CLUBHOUSE_KV.get('mentor:direct-access');
-        return jsonResponse({ enabled: enabled === 'true' });
-      }
-
-      // GET /mentor/session-log - Get live session log
-      if (path === '/mentor/session-log' && method === 'GET') {
-        const log = await env.CLUBHOUSE_KV.get('mentor:session-log') || '';
-        const turns = await env.CLUBHOUSE_KV.get('mentor:session-turns', 'json') as string[] || [];
-        const active = await env.CLUBHOUSE_KV.get('mentor:direct-access') === 'true';
-        return jsonResponse({ log, turns: turns.length, active });
-      }
-
-      // POST /mentor/agent-access - Toggle agent direct access
-      if (path === '/mentor/agent-access' && method === 'POST') {
-        const body = await request.json() as { enabled: boolean; resetSession?: boolean };
-        await env.CLUBHOUSE_KV.put('mentor:direct-access', body.enabled ? 'true' : 'false');
-        // Reset session turns and log when enabling (new session)
-        if (body.resetSession || body.enabled) {
-          await env.CLUBHOUSE_KV.delete('mentor:session-turns');
-          await env.CLUBHOUSE_KV.delete('mentor:session-log');
-        }
-        return jsonResponse({ success: true, enabled: body.enabled });
-      }
-
-      // GET /mentor/queue - Get agent question queue
-      if (path === '/mentor/queue' && method === 'GET') {
-        const list = await env.CLUBHOUSE_KV.list({ prefix: 'mentor-queue:' });
-        const queue = await Promise.all(list.keys.map(async (k) => {
-          const item = await env.CLUBHOUSE_KV.get(k.name, 'json');
-          return item;
-        }));
-        return jsonResponse({ queue: queue.filter(q => q) });
-      }
-
-      // POST /mentor/queue - Agent submits a question
-      if (path === '/mentor/queue' && method === 'POST') {
-        const body = await request.json() as { agentId: string; question: string };
-        const id = Date.now().toString();
-        const agentName = await env.CLUBHOUSE_KV.get(`name:${body.agentId}`) || body.agentId;
-        
-        const item = {
-          id,
-          agentId: body.agentId,
-          agentName,
-          question: body.question,
-          acks: [],
-          createdAt: new Date().toISOString()
-        };
-        
-        await env.CLUBHOUSE_KV.put(`mentor-queue:${id}`, JSON.stringify(item));
-        return jsonResponse({ success: true, id });
-      }
-
-      // POST /mentor/queue/:id/ack - Agent acknowledges reading
-      const queueAckMatch = path.match(/^\/mentor\/queue\/(.+)\/ack$/);
-      if (queueAckMatch && method === 'POST') {
-        const id = queueAckMatch[1];
-        const body = await request.json() as { agentId: string };
-        const item = await env.CLUBHOUSE_KV.get(`mentor-queue:${id}`, 'json') as any;
-        if (!item) return jsonResponse({ error: 'Not found' }, 404);
-        
-        if (!item.acks.includes(body.agentId)) {
-          item.acks.push(body.agentId);
-          await env.CLUBHOUSE_KV.put(`mentor-queue:${id}`, JSON.stringify(item));
-        }
-        return jsonResponse({ success: true, ackCount: item.acks.length });
-      }
-
-      // POST /mentor/queue/:id/process - Mentor processes item
-      const queueProcessMatch = path.match(/^\/mentor\/queue\/(.+)\/process$/);
-      if (queueProcessMatch && method === 'POST') {
-        const id = queueProcessMatch[1];
-        const item = await env.CLUBHOUSE_KV.get(`mentor-queue:${id}`, 'json') as any;
-        if (!item) return jsonResponse({ error: 'Not found' }, 404);
-        
-        // Move to processed list
-        await env.CLUBHOUSE_KV.put(`mentor-processed:${id}`, JSON.stringify({
-          ...item,
-          processedAt: new Date().toISOString()
-        }));
-        await env.CLUBHOUSE_KV.delete(`mentor-queue:${id}`);
-        return jsonResponse({ success: true });
-      }
-
-      // DELETE /mentor/queue/:id - Dismiss queue item
-      const queueDeleteMatch = path.match(/^\/mentor\/queue\/(.+)$/);
-      if (queueDeleteMatch && method === 'DELETE') {
-        const id = queueDeleteMatch[1];
-        await env.CLUBHOUSE_KV.delete(`mentor-queue:${id}`);
-        return jsonResponse({ success: true });
-      }
 
       // GET /ontology/:id - Get single ontology entry
       const ontologyGetMatch = path.match(/^\/ontology\/([^/]+)$/);
