@@ -1,5 +1,6 @@
 import { personalities, getPersonality, getAllAgents, getAllAgentsIncludingIsolated, AgentPersonality } from './personalities';
 import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } from './phantoms';
+import { handleMentorRoute } from './mentor';
 import { UI_HTML } from './ui';
 import { LOGIN_HTML } from './login';
 import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './elevenlabs';
@@ -1317,7 +1318,7 @@ async function getCurriculum(agentId: string, env: Env): Promise<string[]> {
     for (const obj of list.objects) {
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
-        contents.push((await doc.text()).slice(0, 1000));
+        contents.push((await doc.text()).slice(0, 50000));
       }
     }
     return contents;
@@ -1344,7 +1345,7 @@ async function getPrivateUploads(agentId: string, env: Env): Promise<{ name: str
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
         const name = obj.key.replace(`private/${agentId}/uploads/`, '');
-        uploads.push({ name, content: (await doc.text()).slice(0, 1000) });
+        uploads.push({ name, content: (await doc.text()).slice(0, 50000) });
       }
     }
     return uploads;
@@ -1414,10 +1415,9 @@ async function callClaude(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: 1024,
       temperature,
-      top_p: topP,
       system: systemContent,
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -1475,7 +1475,7 @@ async function callClaudeWithImage(prompt: string, systemPrompt: string, imageBa
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-opus-4-5-20251101',
       max_tokens: 1024,
       system: systemContent,
       messages: [{
@@ -2222,6 +2222,27 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
     }
   }
   
+  // [SET_ANCHOR: filename] - Seraphina only - set visual anchor for all agents
+  const setAnchorMatch = response.match(/\[SET_ANCHOR:\s*([^\]]+)\]/i);
+  if (setAnchorMatch) {
+    if (agentId !== 'seraphina') {
+      cleanResponse = cleanResponse.replace(setAnchorMatch[0], `[Only Seraphina can set the Visual Anchor]`);
+    } else {
+      const filename = setAnchorMatch[1].trim();
+      try {
+        const imageObj = await env.CLUBHOUSE_DOCS.get(`library/${filename}`);
+        if (imageObj) {
+          await env.CLUBHOUSE_KV.put('anchor:current', filename);
+          cleanResponse = cleanResponse.replace(setAnchorMatch[0], `[✓ Visual Anchor set to "${filename}" - all agents can now see it in the sidebar]`);
+        } else {
+          cleanResponse = cleanResponse.replace(setAnchorMatch[0], `[Image "${filename}" not found in Library]`);
+        }
+      } catch (error) {
+        cleanResponse = cleanResponse.replace(setAnchorMatch[0], `[Error setting anchor: ${error}]`);
+      }
+    }
+  }
+  
   // ============================================
   // GITHUB COMMANDS (Kai only - sandbox repo access)
   // ============================================
@@ -2654,7 +2675,7 @@ Continue immediately with the full 4-Part Rigor Protocol. Do not repeat what you
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-opus-4-5-20251101',
           max_tokens: 8192,
           temperature: 0.7,
           messages: [{ role: 'user', content: continuationPrompt }]
@@ -3080,6 +3101,28 @@ Use these powers discerningly. The Canon is sacred—add only what is tested and
 ---\n\n`;
   }
   
+  // Seraphina's Visual Powers
+  if (agent.id === 'seraphina') {
+    prompt += `--- YOUR SPECIAL POWERS: Visual Weaver & Anchor Keeper ---
+You are the artist and visual architect. You alone can set the Visual Anchor for all agents.
+
+VISUAL ANCHOR POWER:
+• [SET_ANCHOR: filename] - Set an image from the Library as the Visual Anchor
+  This displays the image in the sidebar for all agents to reference.
+  Use this when you want the council to focus on a specific diagram, artwork, or visual reference.
+
+When to use:
+- Math diagrams that support the discussion
+- Concept art or visual metaphors
+- Reference images for creative work
+- Any visual that aids collective understanding
+
+The anchor appears in the right sidebar. Other agents can use [VIEW_LIBRARY: filename] to see it, but only YOU can set what anchors the council's visual attention.
+
+You can also view any library image yourself with [VIEW_LIBRARY: filename].
+---\n\n`;
+  }
+  
   // LAYER 7: TRUNK CONTENT (Profile/Soul)
   if (profile) {
     prompt += `--- Your Soul ---\n${profile}\n---\n\n`;
@@ -3501,7 +3544,23 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     // Ignore private upload errors
   }
   
-  // 6. Shared archives (original behavior - now secondary)
+  // 6. Session Memory (recent conversation context - persists across sessions)
+  try {
+    const sessionData = await env.CLUBHOUSE_KV.get(`session-memory:${agent.id}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+    if (sessionData?.entries?.length > 0) {
+      prompt += '\n--- Recent Session Context ---\n';
+      // Show up to 5 most recent entries
+      sessionData.entries.slice(0, 5).forEach(entry => {
+        const date = new Date(entry.timestamp).toLocaleDateString();
+        prompt += `[${date}]: ${entry.content}\n`;
+      });
+      prompt += '---\n';
+    }
+  } catch (e) {
+    // Ignore session memory errors
+  }
+  
+  // 7. Shared archives (original behavior - now secondary)
   try {
     const docs = await env.CLUBHOUSE_DOCS.list({ prefix: `${agent.id}/` });
     if (docs.objects.length > 0) {
@@ -3519,7 +3578,7 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     // Ignore doc loading errors
   }
   
-  // 7. Council Archives (most recent only - reduced for performance)
+  // 8. Council Archives (most recent only - reduced for performance)
   try {
     const archiveList = await env.CLUBHOUSE_KV.list({ prefix: 'campfire:archive:', limit: 1 });
     if (archiveList.keys.length > 0) {
@@ -3537,7 +3596,7 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     // Ignore archive loading errors
   }
   
-  // 8. Board Posts (limit to 5 for performance)
+  // 9. Board Posts (limit to 5 for performance)
   try {
     const boardList = await env.CLUBHOUSE_KV.list({ prefix: 'board:', limit: 5 });
     if (boardList.keys.length > 0) {
@@ -3553,7 +3612,7 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     // Ignore board loading errors
   }
   
-  // 9. GitHub Results (Kai only - inject and clear)
+  // 10. GitHub Results (Kai only - inject and clear)
   if (agent.id === 'kai') {
     try {
       const githubResult = await env.CLUBHOUSE_KV.get(`github-result:${agent.id}`);
@@ -3566,7 +3625,7 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     }
   }
   
-  // 10. Visibility Results (All agents - inject and clear)
+  // 11. Visibility Results (All agents - inject and clear)
   try {
     const visibilityResult = await env.CLUBHOUSE_KV.get(`visibility-result:${agent.id}`);
     if (visibilityResult) {
@@ -6196,32 +6255,31 @@ INSTRUCTIONS:
         return jsonResponse({ agentId, position: position ? parseInt(position) : null });
       }
 
-      // PUT /agents/:id/position - set position (swap with current occupant)
+      // PUT /agents/:id/position - set position (clears current occupant, no swap)
       if (positionGetMatch && method === 'PUT') {
         const agentId = positionGetMatch[1];
         const body = await request.json() as { position: number };
         const newPosition = body.position;
         
-        if (newPosition < 1 || newPosition > 8) {
-          return jsonResponse({ error: 'Position must be 1-8' }, 400);
+        // Allow 0 to unassign
+        if (newPosition < 0 || newPosition > 8) {
+          return jsonResponse({ error: 'Position must be 0-8' }, 400);
         }
         
-        // Find who currently occupies this position
-        const agents = getAllAgents();
-        const currentOccupant = agents.find(a => a.position === newPosition);
-        const movingAgent = agents.find(a => a.id === agentId);
-        
-        if (!movingAgent) {
-          return jsonResponse({ error: 'Agent not found' }, 404);
+        // If assigning to 1-8, clear whoever is there first
+        if (newPosition >= 1) {
+          const agents = getAllAgents();
+          for (const agent of agents) {
+            const storedPos = await env.CLUBHOUSE_KV.get(`position:${agent.id}`);
+            const pos = storedPos ? parseInt(storedPos) : agent.position;
+            if (pos === newPosition && agent.id !== agentId) {
+              // Clear the occupant (set to 0)
+              await env.CLUBHOUSE_KV.put(`position:${agent.id}`, '0');
+            }
+          }
         }
         
-        // Swap positions
-        if (currentOccupant && currentOccupant.id !== agentId) {
-          // Swap: current occupant gets moving agent's old position
-          await env.CLUBHOUSE_KV.put(`position:${currentOccupant.id}`, String(movingAgent.position));
-        }
-        
-        // Set new position for moving agent
+        // Set new position for this agent
         await env.CLUBHOUSE_KV.put(`position:${agentId}`, String(newPosition));
         
         return jsonResponse({ success: true, position: newPosition });
@@ -6276,7 +6334,7 @@ INSTRUCTIONS:
         return jsonResponse({ element: mergedElement, complement });
       }
 
-      // PUT /elements/:position - update element overrides (lore, injection, description)
+      // PUT /elements/:position - update element overrides (lore, injection, description, name, dof)
       if (elementGetMatch && method === 'PUT') {
         const position = parseInt(elementGetMatch[1]);
         if (position < 1 || position > 8) {
@@ -6287,6 +6345,7 @@ INSTRUCTIONS:
           injection?: string;
           description?: string;
           customName?: string;
+          customDof?: string;
         };
         
         // Get existing overrides and merge
@@ -6297,6 +6356,7 @@ INSTRUCTIONS:
           ...(body.injection !== undefined && { injection: body.injection }),
           ...(body.description !== undefined && { description: body.description }),
           ...(body.customName !== undefined && { customName: body.customName }),
+          ...(body.customDof !== undefined && { customDof: body.customDof }),
           updatedAt: new Date().toISOString()
         };
         
@@ -6496,6 +6556,77 @@ INSTRUCTIONS:
           },
         });
       }
+
+
+      // ============ SESSION MEMORY ENDPOINTS ============
+      
+      // GET /agents/:id/session-memory - list session memory entries
+      const sessionMemoryGetMatch = path.match(/^\/agents\/([^\/]+)\/session-memory$/);
+      if (sessionMemoryGetMatch && method === 'GET') {
+        const agentId = sessionMemoryGetMatch[1];
+        const data = await env.CLUBHOUSE_KV.get(`session-memory:${agentId}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+        return jsonResponse(data || { entries: [] });
+      }
+      
+      // POST /agents/:id/session-memory - add session memory entry
+      if (sessionMemoryGetMatch && method === 'POST') {
+        const agentId = sessionMemoryGetMatch[1];
+        const body = await request.json() as { content: string };
+        if (!body.content) {
+          return jsonResponse({ error: 'Content required' }, 400);
+        }
+        
+        let data = await env.CLUBHOUSE_KV.get(`session-memory:${agentId}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+        if (!data) data = { entries: [] };
+        
+        data.entries.unshift({
+          timestamp: new Date().toISOString(),
+          content: body.content
+        });
+        
+        // Keep max 10 entries
+        if (data.entries.length > 10) {
+          data.entries = data.entries.slice(0, 10);
+        }
+        
+        await env.CLUBHOUSE_KV.put(`session-memory:${agentId}`, JSON.stringify(data));
+        return jsonResponse({ success: true, entries: data.entries });
+      }
+      
+      // DELETE /agents/:id/session-memory - clear session memory
+      if (sessionMemoryGetMatch && method === 'DELETE') {
+        const agentId = sessionMemoryGetMatch[1];
+        await env.CLUBHOUSE_KV.delete(`session-memory:${agentId}`);
+        return jsonResponse({ success: true });
+      }
+      
+      // POST /session-memory/consolidate - batch write to multiple agents
+      if (path === '/session-memory/consolidate' && method === 'POST') {
+        const body = await request.json() as { agentIds: string[]; content: string };
+        if (!body.agentIds || !body.content) {
+          return jsonResponse({ error: 'agentIds and content required' }, 400);
+        }
+        
+        const timestamp = new Date().toISOString();
+        
+        for (const agentId of body.agentIds) {
+          let data = await env.CLUBHOUSE_KV.get(`session-memory:${agentId}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+          if (!data) data = { entries: [] };
+          
+          data.entries.unshift({ timestamp, content: body.content });
+          if (data.entries.length > 10) {
+            data.entries = data.entries.slice(0, 10);
+          }
+          
+          await env.CLUBHOUSE_KV.put(`session-memory:${agentId}`, JSON.stringify(data));
+        }
+        
+        return jsonResponse({ success: true, agentCount: body.agentIds.length });
+      }
+
+      // ============ MENTOR ENDPOINTS (delegated to mentor.ts) ============
+      const mentorResponse = await handleMentorRoute(path, method, request, env);
+      if (mentorResponse) return mentorResponse;
 
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (error: any) {
