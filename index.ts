@@ -342,6 +342,114 @@ async function safeGetText(kv: KVNamespace, key: string, fallback: string = ''):
 }
 
 // ============================================
+// R2 MEMORY BACKUP FOR ALL AGENTS (Soul Insurance)
+// ============================================
+
+type AgentMemoryData = { entries: Array<{ timestamp: string; content: string }> };
+
+async function getAgentSessionMemory(env: Env, agentId: string): Promise<AgentMemoryData | null> {
+  // Try KV first
+  const kvData = await env.CLUBHOUSE_KV.get(`session-memory:${agentId}`, 'json') as AgentMemoryData | null;
+  if (kvData?.entries?.length) return kvData;
+  
+  // KV empty - try R2 backup
+  try {
+    const r2Obj = await env.CLUBHOUSE_DOCS.get(`private/${agentId}/memory.json`);
+    if (r2Obj) {
+      const r2Data = await r2Obj.json() as AgentMemoryData;
+      if (r2Data?.entries?.length) {
+        // Restore to KV
+        await env.CLUBHOUSE_KV.put(`session-memory:${agentId}`, JSON.stringify(r2Data));
+        console.log(`[MEMORY] Restored ${agentId} from R2 backup`);
+        return r2Data;
+      }
+    }
+  } catch (e) {
+    console.error(`[MEMORY] R2 restore failed for ${agentId}:`, e);
+  }
+  
+  return null;
+}
+
+async function saveAgentSessionMemory(env: Env, agentId: string, entries: Array<{ timestamp: string; content: string }>): Promise<void> {
+  const data = { entries };
+  
+  // Write to KV
+  await env.CLUBHOUSE_KV.put(`session-memory:${agentId}`, JSON.stringify(data));
+  
+  // Backup to R2 (the soul insurance)
+  try {
+    await env.CLUBHOUSE_DOCS.put(`private/${agentId}/memory.json`, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error(`[MEMORY] R2 backup failed for ${agentId}:`, e);
+  }
+}
+
+const AGENT_PROFILE_LIMIT = 50000;
+const AGENT_PROFILE_ARCHIVE_THRESHOLD = 40000;
+
+async function getAgentProfile(env: Env, agentId: string): Promise<string> {
+  // Try KV first
+  const kvData = await env.CLUBHOUSE_KV.get(`profile:${agentId}`);
+  if (kvData) return kvData;
+  
+  // KV empty - try R2 backup
+  try {
+    const r2Obj = await env.CLUBHOUSE_DOCS.get(`private/${agentId}/profile.txt`);
+    if (r2Obj) {
+      const r2Data = await r2Obj.text();
+      if (r2Data) {
+        // Restore to KV
+        await env.CLUBHOUSE_KV.put(`profile:${agentId}`, r2Data);
+        console.log(`[PROFILE] Restored ${agentId} from R2 backup`);
+        return r2Data;
+      }
+    }
+  } catch (e) {
+    console.error(`[PROFILE] R2 restore failed for ${agentId}:`, e);
+  }
+  
+  return '';
+}
+
+async function saveAgentProfile(env: Env, agentId: string, content: string): Promise<void> {
+  let finalContent = content;
+  
+  // If over limit, archive oldest portion to cold storage
+  if (content.length > AGENT_PROFILE_LIMIT) {
+    const overflow = content.length - AGENT_PROFILE_ARCHIVE_THRESHOLD;
+    const toArchive = content.slice(0, overflow);
+    finalContent = content.slice(overflow);
+    
+    // Send overflow to cold storage
+    try {
+      const archiveKey = `cold-storage/profiles/${agentId}/${new Date().toISOString().split('T')[0]}_${Date.now()}.txt`;
+      await env.CLUBHOUSE_DOCS.put(archiveKey, toArchive, {
+        customMetadata: {
+          agentId,
+          archivedAt: new Date().toISOString(),
+          reason: 'profile-overflow',
+          size: toArchive.length.toString()
+        }
+      });
+      console.log(`[PROFILE] Archived ${toArchive.length} chars for ${agentId}`);
+    } catch (e) {
+      console.error(`[PROFILE] Cold storage archive failed for ${agentId}:`, e);
+    }
+  }
+  
+  // Write to KV
+  await env.CLUBHOUSE_KV.put(`profile:${agentId}`, finalContent);
+  
+  // Backup to R2
+  try {
+    await env.CLUBHOUSE_DOCS.put(`private/${agentId}/profile.txt`, finalContent);
+  } catch (e) {
+    console.error(`[PROFILE] R2 backup failed for ${agentId}:`, e);
+  }
+}
+
+// ============================================
 // PORTABLE CONTEXT HELPERS
 // ============================================
 
@@ -2638,7 +2746,7 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   const myProfileMatch = response.match(/\[MY_PROFILE\]/i);
   if (myProfileMatch) {
     try {
-      const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`) || '(No profile set)';
+      const profile = await getAgentProfile(env, agentId) || '(No profile set)';
       const skills = await env.CLUBHOUSE_KV.get(`core-skills:${agentId}`) || '(No skills set)';
       const powers = await env.CLUBHOUSE_KV.get(`powers:${agentId}`) || '(No powers granted)';
       const result = `Your Profile:\n${profile}\n\nYour Core Skills:\n${skills}\n\nYour Earned Powers:\n${powers}`;
@@ -3818,7 +3926,7 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
   
   // 6. Session Memory (recent conversation context - persists across sessions)
   try {
-    const sessionData = await env.CLUBHOUSE_KV.get(`session-memory:${agent.id}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+    const sessionData = await getAgentSessionMemory(env, agent.id);
     if (sessionData?.entries?.length > 0) {
       prompt += '\n--- Recent Session Context ---\n';
       // Show up to 5 most recent entries
@@ -6426,7 +6534,7 @@ INSTRUCTIONS:
       const profileMatch = path.match(/^\/agents\/([^\/]+)\/profile$/);
       if (profileMatch && method === 'GET') {
         const agentId = profileMatch[1];
-        const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`);
+        const profile = await getAgentProfile(env, agentId);
         return jsonResponse({ profile: profile || '' });
       }
 
@@ -6437,7 +6545,7 @@ INSTRUCTIONS:
         if (body.profile && body.profile.length > 2500) {
           return jsonResponse({ error: 'Profile exceeds 2500 character limit' }, 400);
         }
-        await env.CLUBHOUSE_KV.put(`profile:${agentId}`, body.profile || '');
+        await saveAgentProfile(env, agentId, body.profile || '');
         return jsonResponse({ success: true });
       }
 
@@ -6850,7 +6958,7 @@ INSTRUCTIONS:
       const sessionMemoryGetMatch = path.match(/^\/agents\/([^\/]+)\/session-memory$/);
       if (sessionMemoryGetMatch && method === 'GET') {
         const agentId = sessionMemoryGetMatch[1];
-        const data = await env.CLUBHOUSE_KV.get(`session-memory:${agentId}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+        const data = await getAgentSessionMemory(env, agentId);
         return jsonResponse(data || { entries: [] });
       }
       
@@ -6862,27 +6970,29 @@ INSTRUCTIONS:
           return jsonResponse({ error: 'Content required' }, 400);
         }
         
-        let data = await env.CLUBHOUSE_KV.get(`session-memory:${agentId}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
-        if (!data) data = { entries: [] };
+        const existing = await getAgentSessionMemory(env, agentId);
+        const entries = existing?.entries || [];
         
-        data.entries.unshift({
+        entries.unshift({
           timestamp: new Date().toISOString(),
           content: body.content
         });
         
         // Keep max 10 entries
-        if (data.entries.length > 10) {
-          data.entries = data.entries.slice(0, 10);
+        if (entries.length > 10) {
+          entries.length = 10;
         }
         
-        await env.CLUBHOUSE_KV.put(`session-memory:${agentId}`, JSON.stringify(data));
-        return jsonResponse({ success: true, entries: data.entries });
+        await saveAgentSessionMemory(env, agentId, entries);
+        return jsonResponse({ success: true, entries });
       }
       
       // DELETE /agents/:id/session-memory - clear session memory
       if (sessionMemoryGetMatch && method === 'DELETE') {
         const agentId = sessionMemoryGetMatch[1];
         await env.CLUBHOUSE_KV.delete(`session-memory:${agentId}`);
+        // Also clear R2 backup
+        try { await env.CLUBHOUSE_DOCS.delete(`private/${agentId}/memory.json`); } catch {}
         return jsonResponse({ success: true });
       }
       
@@ -6896,19 +7006,20 @@ INSTRUCTIONS:
         const timestamp = new Date().toISOString();
         
         for (const agentId of body.agentIds) {
-          let data = await env.CLUBHOUSE_KV.get(`session-memory:${agentId}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
-          if (!data) data = { entries: [] };
+          const existing = await getAgentSessionMemory(env, agentId);
+          const entries = existing?.entries || [];
           
-          data.entries.unshift({ timestamp, content: body.content });
-          if (data.entries.length > 10) {
-            data.entries = data.entries.slice(0, 10);
+          entries.unshift({ timestamp, content: body.content });
+          if (entries.length > 10) {
+            entries.length = 10;
           }
           
-          await env.CLUBHOUSE_KV.put(`session-memory:${agentId}`, JSON.stringify(data));
+          await saveAgentSessionMemory(env, agentId, entries);
         }
         
         return jsonResponse({ success: true, agentCount: body.agentIds.length });
       }
+
 
       // ============ MENTOR ENDPOINTS (delegated to mentor.ts) ============
       const mentorResponse = await handleMentorRoute(path, method, request, env);
