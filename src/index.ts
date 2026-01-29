@@ -1065,7 +1065,7 @@ async function handleWhatsAppWebhook(request: Request, env: Env): Promise<Respon
     // Check Twilio config exists
     const twilioSid = (env as any).TWILIO_ACCOUNT_SID;
     const twilioToken = (env as any).TWILIO_AUTH_TOKEN;
-    const twilioNumber = (env as any).TWILIO_WHATSAPP_NUMBER || 'whatsapp:+13605858392';
+    const twilioNumber = (env as any).TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
     
     if (!twilioSid || !twilioToken) {
       console.error('Twilio credentials not configured');
