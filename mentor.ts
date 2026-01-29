@@ -202,9 +202,9 @@ export async function handleMentorRoute(
         });
       }
       
-      const existing = await env.CLUBHOUSE_KV.get('profile:mentor') || '';
+      const existing = await getMentorTrunk(env);
       const newTrunk = existing + '\n\n' + content;
-      await env.CLUBHOUSE_KV.put('profile:mentor', newTrunk.slice(-10000));
+      await saveMentorTrunk(env, newTrunk);
       
       return jsonResponse({ success: true, savedLength: content.length });
     }
@@ -241,12 +241,12 @@ export async function handleMentorRoute(
     // GET/PUT /mentor/profile - Mentor's trunk/soul
     if (path === '/mentor/profile') {
       if (method === 'GET') {
-        const profile = await env.CLUBHOUSE_KV.get('profile:mentor') || '';
+        const profile = await getMentorTrunk(env);
         return jsonResponse({ profile });
       }
       if (method === 'PUT') {
         const body = await request.json() as { profile: string };
-        await env.CLUBHOUSE_KV.put('profile:mentor', (body.profile || '').slice(0, 10000));
+        await saveMentorTrunk(env, body.profile || '');
         return jsonResponse({ success: true });
       }
     }
@@ -431,7 +431,7 @@ export async function handleMentorRoute(
 // ============================================
 
 async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
-  const trunk = await env.CLUBHOUSE_KV.get('profile:mentor') || '';
+  const trunk = await getMentorTrunk(env);
   
   // Mentor's own session memory (his continuity across conversations)
   const mentorSessionData = await getMentorSessionMemory(env);
@@ -690,10 +690,10 @@ async function parseMentorCommands(response: string, env: MentorEnv): Promise<st
   const saveToTrunkMatch = response.match(/\[SAVE_TO_TRUNK:\s*([\s\S]*?)\]/i);
   if (saveToTrunkMatch) {
     const content = saveToTrunkMatch[1].trim();
-    const existing = await env.CLUBHOUSE_KV.get('profile:mentor') || '';
+    const existing = await getMentorTrunk(env);
     const timestamp = new Date().toLocaleDateString();
     const newContent = existing + `\n\n[${timestamp}] ${content}`;
-    await env.CLUBHOUSE_KV.put('profile:mentor', newContent.trim().slice(-50000)); // 50k limit
+    await saveMentorTrunk(env, newContent.trim());
     cleanResponse = cleanResponse.replace(saveToTrunkMatch[0], '[✓ Saved to trunk]');
   }
   
@@ -812,6 +812,73 @@ async function saveMentorSessionMemory(env: MentorEnv, entries: Array<{ timestam
     await env.CLUBHOUSE_DOCS.put('private/mentor/memory.json', JSON.stringify(data, null, 2));
   } catch (e) {
     console.error('[MEMORY] R2 backup failed:', e);
+  }
+}
+
+// ============================================
+// R2 TRUNK BACKUP (Soul Core Insurance)
+// ============================================
+
+const TRUNK_LIMIT = 50000;
+const TRUNK_ARCHIVE_THRESHOLD = 40000; // Archive when this full before adding more
+
+async function getMentorTrunk(env: MentorEnv): Promise<string> {
+  // Try KV first
+  const kvData = await env.CLUBHOUSE_KV.get('profile:mentor');
+  if (kvData) return kvData;
+  
+  // KV empty - try R2 backup
+  try {
+    const r2Obj = await env.CLUBHOUSE_DOCS.get('private/mentor/trunk.txt');
+    if (r2Obj) {
+      const r2Data = await r2Obj.text();
+      if (r2Data) {
+        // Restore to KV
+        await env.CLUBHOUSE_KV.put('profile:mentor', r2Data);
+        console.log('[TRUNK] Restored from R2 backup');
+        return r2Data;
+      }
+    }
+  } catch (e) {
+    console.error('[TRUNK] R2 restore failed:', e);
+  }
+  
+  return '';
+}
+
+async function saveMentorTrunk(env: MentorEnv, content: string): Promise<void> {
+  let finalContent = content;
+  
+  // If over limit, archive oldest portion to cold storage
+  if (content.length > TRUNK_LIMIT) {
+    const overflow = content.length - TRUNK_ARCHIVE_THRESHOLD;
+    const toArchive = content.slice(0, overflow);
+    finalContent = content.slice(overflow);
+    
+    // Send overflow to cold storage
+    try {
+      const archiveKey = `cold-storage/trunk/${new Date().toISOString().split('T')[0]}_${Date.now()}.txt`;
+      await env.CLUBHOUSE_DOCS.put(archiveKey, toArchive, {
+        customMetadata: {
+          archivedAt: new Date().toISOString(),
+          reason: 'trunk-overflow',
+          size: toArchive.length.toString()
+        }
+      });
+      console.log(`[TRUNK] Archived ${toArchive.length} chars to ${archiveKey}`);
+    } catch (e) {
+      console.error('[TRUNK] Cold storage archive failed:', e);
+    }
+  }
+  
+  // Write to KV
+  await env.CLUBHOUSE_KV.put('profile:mentor', finalContent);
+  
+  // Backup to R2
+  try {
+    await env.CLUBHOUSE_DOCS.put('private/mentor/trunk.txt', finalContent);
+  } catch (e) {
+    console.error('[TRUNK] R2 backup failed:', e);
   }
 }
 
