@@ -1189,6 +1189,16 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           <button class="btn btn-secondary" id="mentor-mode-toggle" onclick="toggleMentorMode()">Mode: Direct</button>
           <button class="btn btn-secondary" id="mentor-agent-access" onclick="toggleMentorAgentAccess()">Agents: Queue Only</button>
           <button class="btn btn-secondary" onclick="consolidateMentorSession()" title="Save session to Mentor memory">🧠</button>
+          <button class="btn btn-secondary" onclick="runPulseRound()" title="Run advisory board pulse round">⚡ Pulse</button>
+        </div>
+        <div id="pulse-result" style="display: none; background: rgba(20, 24, 32, 0.95); border: 2px solid var(--gold); border-radius: 3px; padding: 15px; margin-bottom: 15px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h4 style="font-size: 0.85em; color: var(--gold);">⚡ Pulse Round Result</h4>
+            <button class="btn btn-secondary" onclick="document.getElementById('pulse-result').style.display='none'" style="font-size: 0.7em; padding: 2px 8px;">✕</button>
+          </div>
+          <div id="pulse-question" style="font-size: 0.9em; color: var(--pearl); font-weight: bold; margin-bottom: 10px;"></div>
+          <div id="pulse-contributions" style="font-size: 0.8em; color: var(--silver); margin-bottom: 10px; max-height: 200px; overflow-y: auto;"></div>
+          <div id="pulse-synthesis" style="font-size: 0.85em; color: var(--gold); padding: 10px; background: rgba(10, 12, 15, 0.5); border-radius: 3px;"></div>
         </div>
         <div id="mentor-status"></div>
         
@@ -5688,6 +5698,39 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       .then(function(data) {
         if (data.success) showStatus('mentor-status', 'Session saved to memory', 'success');
         else showStatus('mentor-status', data.error || 'Failed', 'error');
+      });
+    }
+    
+    function runPulseRound() {
+      var customQuestion = prompt('Pulse question (leave blank for next in queue):');
+      showStatus('mentor-status', '⚡ Running pulse round...', 'success');
+      
+      fetch(API + '/mentor/pulse/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: customQuestion || undefined }),
+        credentials: 'same-origin'
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success && data.result) {
+          var r = data.result;
+          document.getElementById('pulse-question').textContent = '❓ ' + r.question;
+          
+          var contribHtml = r.contributions.map(function(c) {
+            return '<div style="margin-bottom: 8px;"><strong style="color: var(--pearl);">[' + c.agent.toUpperCase() + ']</strong> ' + escapeHtml(c.response) + '</div>';
+          }).join('');
+          document.getElementById('pulse-contributions').innerHTML = contribHtml;
+          
+          document.getElementById('pulse-synthesis').innerHTML = '<strong>Oracle Synthesis:</strong><br>' + escapeHtml(r.synthesis);
+          document.getElementById('pulse-result').style.display = 'block';
+          showStatus('mentor-status', '⚡ Pulse complete', 'success');
+        } else {
+          showStatus('mentor-status', data.error || 'Pulse failed', 'error');
+        }
+      })
+      .catch(function(err) {
+        showStatus('mentor-status', 'Pulse error: ' + err.message, 'error');
       });
     }
     
