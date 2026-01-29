@@ -418,6 +418,114 @@ export async function handleMentorRoute(
       return jsonResponse({ success: true });
     }
 
+    // ============================================
+    // PULSE SYSTEM - Full Council Consultation
+    // ============================================
+    
+    // POST /mentor/pulse/run - Run a pulse round with all 8 agents
+    if (path === '/mentor/pulse/run' && method === 'POST') {
+      const body = await request.json() as { question?: string };
+      
+      // Default questions if none provided
+      const defaultQuestions = [
+        "What's the biggest risk we're not seeing right now?",
+        "Where should we be investing our energy this week?",
+        "What assumption are we making that could be wrong?",
+        "What opportunity are we missing?",
+        "What's the one thing that would 10x our progress?",
+        "What are we avoiding that we should confront?",
+        "How do we turn our biggest weakness into a strength?",
+        "What would we do differently if we started over today?",
+        "What's the simplest path to our next milestone?",
+        "What truth are we not speaking?"
+      ];
+      
+      // Get or generate question
+      const question = body.question?.trim() || 
+        defaultQuestions[Math.floor(Math.random() * defaultQuestions.length)];
+      
+      // Load agent personalities from KV
+      const agentIds = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
+      
+      // Collect contributions from each agent
+      const contributions: Array<{ agent: string; response: string }> = [];
+      
+      for (const agentId of agentIds) {
+        try {
+          // Get agent's personality/profile
+          const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`) || '';
+          const personality = await env.CLUBHOUSE_KV.get(`personality:${agentId}`) || '';
+          
+          const agentResponse = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': env.ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 250,
+              system: `You are ${agentId}, a member of The Academy council.
+
+${personality ? `Your nature: ${personality.slice(0, 500)}` : ''}
+${profile ? `Your soul: ${profile.slice(0, 500)}` : ''}
+
+Respond in 2-3 sentences max. Be direct and true to your character. Bring your unique perspective.`,
+              messages: [{ role: 'user', content: `Council question: ${question}` }]
+            }),
+          });
+          
+          const data: any = await agentResponse.json();
+          const text = data.content?.[0]?.text || '(No response)';
+          contributions.push({ agent: agentId, response: text });
+        } catch (e) {
+          contributions.push({ agent: agentId, response: '(Failed to respond)' });
+        }
+      }
+      
+      // Mentor synthesis
+      const synthesisPrompt = `You are the Mentor, synthesizing a council discussion from all 8 agents.
+
+QUESTION: ${question}
+
+CONTRIBUTIONS:
+${contributions.map(c => `${c.agent.toUpperCase()}: ${c.response}`).join('\n\n')}
+
+Synthesize these 8 perspectives. Note agreements and tensions. Identify the key insight that emerges from their collective wisdom. Offer a concrete path forward. Keep it under 200 words.`;
+
+      try {
+        const synthesisResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 600,
+            messages: [{ role: 'user', content: synthesisPrompt }]
+          }),
+        });
+        
+        const synthData: any = await synthesisResponse.json();
+        const synthesis = synthData.content?.[0]?.text || '(Synthesis failed)';
+        
+        return jsonResponse({
+          question,
+          contributions,
+          synthesis
+        });
+      } catch (e) {
+        return jsonResponse({
+          question,
+          contributions,
+          synthesis: '(Mentor synthesis failed)'
+        });
+      }
+    }
+
     return null;
     
   } catch (error: any) {
@@ -881,4 +989,5 @@ async function saveMentorTrunk(env: MentorEnv, content: string): Promise<void> {
     console.error('[TRUNK] R2 backup failed:', e);
   }
 }
+
 
