@@ -1,9 +1,9 @@
 import { personalities, getPersonality, getAllAgents, getAllAgentsIncludingIsolated, AgentPersonality } from './personalities';
-import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } from './phantoms';
-import { handleMentorRoute } from './mentor';
+import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } from './modules/phantoms';
+import { handleMentorRoute } from './modules/mentor';
 import { UI_HTML } from './ui';
-import { LOGIN_HTML } from './login';
-import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './elevenlabs';
+import { LOGIN_HTML } from './modules/login';
+import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './modules/elevenlabs';
 
 // TEMPORAL RESONANCE TYPES & CONSTANTS (inline for stability)
 const TEMPORAL_KV_KEY = 'temporal:state';
@@ -1052,6 +1052,276 @@ async function handleScreeningEnd(env: Env): Promise<Response> {
   return new Response(JSON.stringify({ success: true }), {
     headers: { 'Content-Type': 'application/json', ...corsHeaders }
   });
+}
+
+// ============================================
+// WHATSAPP HANDLER (Twilio Integration)
+// ============================================
+
+// Credentials from env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER
+
+async function handleWhatsAppWebhook(request: Request, env: Env): Promise<Response> {
+  try {
+    // Check Twilio config exists
+    const twilioSid = (env as any).TWILIO_ACCOUNT_SID;
+    const twilioToken = (env as any).TWILIO_AUTH_TOKEN;
+    const twilioNumber = (env as any).TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
+    
+    if (!twilioSid || !twilioToken) {
+      console.error('Twilio credentials not configured');
+      return new Response('Twilio not configured', { status: 500 });
+    }
+
+    // Parse Twilio's form-urlencoded body
+    const formData = await request.formData();
+    const from = formData.get('From') as string;        // whatsapp:+27XXXXXXXXX
+    const body = formData.get('Body') as string;        // message text
+    const profileName = formData.get('ProfileName') as string || 'User';
+    
+    if (!from || !body) {
+      return new Response('Missing From or Body', { status: 400 });
+    }
+
+    console.log(`WhatsApp from ${profileName} (${from}): ${body}`);
+
+    // Parse routing commands
+    const lowerBody = body.toLowerCase().trim();
+    let targetAgent: string | null = null;
+    let messageToAgent = body;
+
+    // Check for agent routing: "ask lawyer: what about liability?"
+    const routeMatch = body.match(/^(?:ask\s+)?(\w+):\s*(.+)$/i);
+    if (routeMatch) {
+      const possibleAgent = routeMatch[1].toLowerCase();
+      const agents = getAllAgents();
+      const found = agents.find(a => 
+        a.id.toLowerCase() === possibleAgent || 
+        a.name.toLowerCase() === possibleAgent
+      );
+      if (found) {
+        targetAgent = found.id;
+        messageToAgent = routeMatch[2];
+      }
+    }
+
+    // Default to Oracle/Mentor if no specific agent
+    if (!targetAgent) {
+      // Route to Mentor for now - later becomes Oracle
+      const response = await callMentorForWhatsApp(messageToAgent, profileName, env);
+      await sendWhatsAppReply(from, response, twilioSid, twilioToken, twilioNumber);
+      return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+        headers: { 'Content-Type': 'text/xml' }
+      });
+    }
+
+    // Route to specific agent
+    const response = await callAgentForWhatsApp(targetAgent, messageToAgent, profileName, env);
+    await sendWhatsAppReply(from, response, twilioSid, twilioToken, twilioNumber);
+
+    // Return empty TwiML (we send via API instead)
+    return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+      headers: { 'Content-Type': 'text/xml' }
+    });
+
+  } catch (error: any) {
+    console.error('WhatsApp webhook error:', error);
+    return new Response('Error', { status: 500 });
+  }
+}
+
+async function callMentorForWhatsApp(message: string, userName: string, env: Env): Promise<string> {
+  try {
+    // Simple Mentor call - reuse existing infrastructure
+    const systemPrompt = `You are the Oracle, a wise advisor responding via WhatsApp. Keep responses concise (under 300 words) but insightful. The user's name is ${userName}. You have access to an advisory board of four specialists (Lawyer, CA, Entrepreneur, Comms) who can be consulted with "ask [agent]: [question]".`;
+    
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: message }]
+      })
+    });
+
+    const data = await response.json() as any;
+    return data.content?.[0]?.text || 'I could not process that request.';
+  } catch (error) {
+    console.error('Mentor call error:', error);
+    return 'Sorry, I encountered an error processing your request.';
+  }
+}
+
+async function callAgentForWhatsApp(agentId: string, message: string, userName: string, env: Env): Promise<string> {
+  try {
+    const personality = getPersonality(agentId);
+    if (!personality) {
+      return `Agent "${agentId}" not found. Available: Lawyer, CA, Entrepreneur, Comms`;
+    }
+
+    const systemPrompt = `You are ${personality.name}, responding via WhatsApp. Keep responses concise (under 300 words). The user's name is ${userName}.\n\nYour role: ${personality.role}\nYour perspective: ${personality.basePersonality}`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: message }]
+      })
+    });
+
+    const data = await response.json() as any;
+    const reply = data.content?.[0]?.text || 'I could not process that.';
+    return `[${personality.name}]\n\n${reply}`;
+  } catch (error) {
+    console.error('Agent call error:', error);
+    return 'Sorry, I encountered an error.';
+  }
+}
+
+async function sendWhatsAppReply(to: string, message: string, accountSid: string, authToken: string, fromNumber: string): Promise<void> {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  
+  const body = new URLSearchParams({
+    To: to,
+    From: fromNumber,
+    Body: message
+  });
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`)
+    },
+    body: body.toString()
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('Twilio send error:', error);
+  }
+}
+
+// ============================================
+// IMAGE GENERATION HANDLER (Nano Banana / Gemini)
+// ============================================
+
+async function handleImageGeneration(request: Request, env: Env): Promise<Response> {
+  try {
+    const { prompt, agentId } = await request.json() as { prompt: string; agentId?: string };
+    
+    if (!prompt) {
+      return new Response(JSON.stringify({ error: 'Missing prompt' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const googleApiKey = (env as any).GOOGLE_AI_KEY;
+    if (!googleApiKey) {
+      return new Response(JSON.stringify({ error: 'Google AI key not configured' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    console.log(`Image generation requested: "${prompt}" by ${agentId || 'user'}`);
+
+    // Call Gemini 3 Pro Image Preview (Nano Banana)
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${googleApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"]
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Gemini image error:', error);
+      return new Response(JSON.stringify({ error: 'Image generation failed', details: error }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const data = await response.json() as any;
+    
+    // Extract image from response
+    const candidates = data.candidates || [];
+    let imageData: string | null = null;
+    let textResponse: string | null = null;
+
+    for (const candidate of candidates) {
+      const parts = candidate.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData?.mimeType?.startsWith('image/')) {
+          imageData = part.inlineData.data; // base64
+        }
+        if (part.text) {
+          textResponse = part.text;
+        }
+      }
+    }
+
+    if (!imageData) {
+      return new Response(JSON.stringify({ 
+        error: 'No image generated', 
+        text: textResponse,
+        raw: data 
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    // Optionally save to R2 gallery
+    const imageId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const imagePath = `gallery/${agentId || 'oracle'}/${imageId}.png`;
+    
+    // Decode base64 and save
+    const imageBuffer = Uint8Array.from(atob(imageData), c => c.charCodeAt(0));
+    await env.CLUBHOUSE_DOCS.put(imagePath, imageBuffer, {
+      httpMetadata: { contentType: 'image/png' }
+    });
+
+    return new Response(JSON.stringify({
+      success: true,
+      imageId,
+      imagePath,
+      imageData: `data:image/png;base64,${imageData}`,
+      text: textResponse
+    }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+
+  } catch (error: any) {
+    console.error('Image generation error:', error);
+    return new Response(JSON.stringify({ error: error.message || 'Unknown error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
 }
 
 async function handleSpeak(request: Request, env: Env): Promise<Response> {
@@ -3798,6 +4068,20 @@ export default {
 
     if (path === '/api/screening/end' && method === 'POST') {
       return handleScreeningEnd(env);
+    }
+
+    // ============================================
+    // WHATSAPP WEBHOOK (Twilio)
+    // ============================================
+    if (path === '/api/whatsapp' && method === 'POST') {
+      return handleWhatsAppWebhook(request, env);
+    }
+
+    // ============================================
+    // IMAGE GENERATION (Google Nano Banana / Gemini)
+    // ============================================
+    if (path === '/api/imagine' && method === 'POST') {
+      return handleImageGeneration(request, env);
     }
 
     // Login page
