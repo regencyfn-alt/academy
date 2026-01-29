@@ -63,10 +63,10 @@ export const UI_HTML = `<!DOCTYPE html>
     .main-content-area { width: 100%; }
     
     /* Anchor Sidebar - Shows selected image */
-    .anchor-sidebar { display: none; position: absolute; left: 100%; top: 0; margin-left: 20px; width: 180px; z-index: 50; }
-    .anchor-sidebar-panel { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 8px; padding: 12px; backdrop-filter: blur(10px); position: sticky; top: 120px; }
+    .anchor-sidebar { display: none; position: absolute; left: 100%; top: 0; margin-left: 20px; width: 250px; min-width: 150px; max-width: 600px; z-index: 50; resize: horizontal; overflow: hidden; }
+    .anchor-sidebar-panel { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 8px; padding: 12px; backdrop-filter: blur(10px); overflow: hidden; }
     .anchor-sidebar-label { font-size: 0.6em; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; text-align: center; }
-    .anchor-sidebar-content img { width: 150px; height: auto; max-height: 200px; object-fit: contain; border-radius: 4px; border: 1px solid var(--gold); }
+    .anchor-sidebar-content img, .anchor-sidebar img { max-width: 100%; width: 100%; height: auto; display: block; border-radius: 4px; border: 1px solid var(--gold); cursor: pointer; }
     .anchor-sidebar-name { font-size: 0.65em; color: var(--silver); margin-top: 8px; text-align: center; word-break: break-all; }
     .anchor-sidebar-empty { text-align: center; padding: 20px 10px; color: var(--silver); font-size: 0.7em; }
     @media (min-width: 1200px) { .anchor-sidebar { display: block; } }
@@ -455,6 +455,10 @@ export const UI_HTML = `<!DOCTYPE html>
     .element-cell { background: var(--slate); border-radius: 3px; padding: 10px; text-align: center; border: 2px solid transparent; transition: all 0.2s; cursor: pointer; position: relative; }
     .element-cell:hover { border-color: var(--silver); }
     .element-cell.selected { border-color: var(--gold); box-shadow: 0 0 10px var(--gold-soft); }
+    .element-type-icon { position: absolute; top: 6px; right: 6px; font-size: 1em; }
+    .element-type-icon svg { vertical-align: middle; }
+    .element-icon { display: inline-flex; align-items: center; margin-right: 4px; }
+    .element-icon svg { vertical-align: middle; }
     .element-position { font-size: 0.6em; color: var(--silver); position: absolute; top: 4px; left: 6px; }
     .element-name { font-size: 0.75em; font-weight: 600; color: var(--pearl); margin-bottom: 4px; }
     .element-dof { font-size: 0.6em; color: var(--silver); margin-bottom: 6px; }
@@ -696,6 +700,7 @@ export const UI_HTML = `<!DOCTYPE html>
           <label style="color: var(--silver);">Board:</label>
           <select id="crucible-board-select" onchange="loadCrucibleBoard(this.value)" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 5px; min-width: 150px;">
             <option value="master">📜 Master (Shane)</option>
+            <option value="mentor">🏛️ Mentor</option>
             <option value="mixed" selected>🔀 Mixed (Collab)</option>
             <option value="dream">💫 Dream</option>
             <option value="kai">⚡ Kai</option>
@@ -711,6 +716,7 @@ export const UI_HTML = `<!DOCTYPE html>
           <label style="color: var(--silver);">Copy from:</label>
           <select id="crucible-copy-from" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 5px;">
             <option value="">-- Select --</option>
+            <option value="mentor">🏛️ Mentor</option>
             <option value="mixed">🔀 Mixed</option>
             <option value="dream">💫 Dream</option>
             <option value="kai">⚡ Kai</option>
@@ -812,9 +818,29 @@ export const UI_HTML = `<!DOCTYPE html>
           <div class="element-detail-meta" id="element-detail-meta"></div>
           <div class="element-injection" id="element-injection"></div>
           
+          <!-- Agent Assignment -->
+          <div style="margin: 15px 0; padding: 12px; background: var(--deep); border: 1px solid var(--glass-border); border-radius: 3px;">
+            <label style="font-size: 0.65em; color: var(--gold); display: block; margin-bottom: 6px;">⟡ Assign Agent to This Position</label>
+            <select id="element-agent-select" onchange="assignAgentToElement()" style="width: 100%; padding: 8px; background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); font-size: 0.75em; border-radius: 2px;">
+              <option value="">— None —</option>
+            </select>
+            <span id="element-agent-status" style="font-size: 0.65em; color: var(--silver); margin-left: 8px;"></span>
+          </div>
+          
           <!-- Editable Fields (Hidden from agents, visible to Shane) -->
           <div class="element-edit-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--glass-border);">
             <h4 style="font-size: 0.75em; color: var(--private); margin-bottom: 10px;">⟡ Edit Element (Hidden from agents)</h4>
+            
+            <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+              <div style="flex: 1;">
+                <label style="font-size: 0.65em; color: var(--silver); display: block; margin-bottom: 4px;">DoF Name (e.g. Rotation, Chirality)</label>
+                <input type="text" id="element-name-input" placeholder="Custom DoF name..." style="width: 100%; padding: 8px; background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); font-size: 0.75em; border-radius: 2px;">
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 0.65em; color: var(--silver); display: block; margin-bottom: 4px;">DoF Label (e.g. Phase Advance)</label>
+                <input type="text" id="element-dof-input" placeholder="Custom DoF label..." style="width: 100%; padding: 8px; background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); font-size: 0.75em; border-radius: 2px;">
+              </div>
+            </div>
             
             <div style="margin-bottom: 12px;">
               <label style="font-size: 0.65em; color: var(--silver); display: block; margin-bottom: 4px;">Geometric Lore (CHR meaning)</label>
@@ -893,6 +919,7 @@ export const UI_HTML = `<!DOCTYPE html>
             <label style="color: var(--silver); font-size: 0.75em;">Board:</label>
             <select id="alcove-crucible-board" onchange="loadAlcoveCrucibleBoard(this.value)" style="background: var(--slate); border: 1px solid var(--glass-border); color: var(--light); padding: 4px; font-size: 0.75em;">
               <option value="master">📜 Master</option>
+              <option value="mentor">🏛️ Mentor</option>
               <option value="mixed" selected>🔀 Mixed</option>
               <option value="dream">💫 Dream</option>
               <option value="kai">⚡ Kai</option>
@@ -1004,6 +1031,10 @@ export const UI_HTML = `<!DOCTYPE html>
       </div>
     </div>
 <div id="the-eight" class="panel">
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; padding: 0 10px;">
+        <button class="btn btn-secondary" onclick="clearAllPositions()" style="font-size: 0.65em; padding: 4px 10px;" title="Set all positions to 0">Clear All</button>
+        <button class="btn btn-secondary" onclick="reorderAllPositions()" style="font-size: 0.65em; padding: 4px 10px;" title="Auto-assign 1-8 by order">Reorder All</button>
+      </div>
       <div id="agents-list" class="agents-grid"></div>
     </div>
     <div id="inbox" class="panel">
@@ -1150,6 +1181,96 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     <div id="wisdom" class="panel">
       <div id="wisdom-status"></div>
       
+      <!-- Mentor Section (TOP PRIORITY) -->
+      <div class="form-section" style="border-color: var(--gold); border-width: 2px; background: rgba(10, 12, 15, 0.95);">
+        <h3 style="color: var(--gold);">🏛 The Mentor</h3>
+        <p style="font-size: 0.75em; color: var(--pearl); margin-bottom: 10px;">External advisor — canon keeper, physics guide</p>
+        <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+          <button class="btn btn-secondary" id="mentor-mode-toggle" onclick="toggleMentorMode()">Mode: Direct</button>
+          <button class="btn btn-secondary" id="mentor-agent-access" onclick="toggleMentorAgentAccess()">Agents: Queue Only</button>
+          <button class="btn btn-secondary" onclick="consolidateMentorSession()" title="Save session to Mentor memory">🧠</button>
+        </div>
+        <div id="mentor-status"></div>
+        
+        <!-- Live Session Log (visible when Direct Line is open) -->
+        <div id="mentor-session-log" style="display: none; background: rgba(20, 24, 32, 0.95); border: 2px solid var(--gold); border-radius: 3px; padding: 15px; margin-bottom: 15px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h4 style="font-size: 0.85em; color: var(--gold);">📡 Live Session Log</h4>
+            <span id="mentor-session-count" style="font-size: 0.7em; color: var(--pearl);">0/8 agents</span>
+          </div>
+          <pre id="mentor-session-content" style="font-size: 0.8em; color: var(--pearl); white-space: pre-wrap; max-height: 300px; overflow-y: auto; background: rgba(10, 12, 15, 0.5); padding: 10px; border-radius: 3px;">Waiting for agents to ask questions...</pre>
+        </div>
+        
+        <!-- Direct Mode: Chat with Mentor -->
+        <div id="mentor-direct" class="mentor-mode-panel">
+          <div class="conversation" id="mentor-messages" style="min-height: 200px; max-height: 300px; background: rgba(20, 24, 32, 0.9); border: 1px solid var(--glass-border); border-radius: 3px; padding: 10px;"><div class="empty"><div class="rune">🏛</div><p>Private counsel with the Mentor.<br>Speak freely.</p></div></div>
+          <div class="input-area" style="margin-top: 10px;">
+            <div class="input-row" style="display: flex; gap: 10px;">
+              <textarea id="mentor-input" placeholder="Speak to the Mentor..." style="flex: 1; background: rgba(10, 12, 15, 0.8); border: 1px solid var(--glass-border); color: var(--pearl); padding: 10px; border-radius: 3px; min-height: 60px;"></textarea>
+              <div style="display: flex; flex-direction: column; gap: 5px;">
+                <button class="btn btn-secondary" onclick="document.getElementById('mentor-upload-input').click()" title="Upload text file to Mentor">📤</button>
+                <input type="file" id="mentor-upload-input" style="display: none;" accept=".txt,.md,.tex,.json" onchange="uploadToMentor(this)">
+                <button class="btn btn-secondary" onclick="document.getElementById('mentor-pdf-input').click()" title="Upload PDF to Mentor">📄</button>
+                <input type="file" id="mentor-pdf-input" style="display: none;" accept=".pdf" onchange="uploadPdfToMentor(this)">
+                <button class="btn btn-secondary" id="mentor-speech-btn" onclick="speakMentorResponse()" title="Voice (requires ElevenLabs)" disabled style="opacity: 0.4;">🔊</button>
+                <button class="btn btn-primary" onclick="sendToMentor()">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Queue Mode: Agents ask questions -->
+        <div id="mentor-queue" class="mentor-mode-panel" style="display: none;">
+          <div style="background: rgba(20, 24, 32, 0.9); border: 1px solid var(--glass-border); border-radius: 3px; padding: 15px; margin-bottom: 15px;">
+            <h4 style="font-size: 0.85em; color: var(--gold); margin-bottom: 10px;">📋 Agent Question Queue</h4>
+            <p style="font-size: 0.7em; color: var(--pearl); margin-bottom: 10px;">Agents submit questions here. All must read before Ontology updates.</p>
+            <div id="mentor-queue-list" style="color: var(--pearl);"><div class="empty" style="padding: 15px; color: var(--silver);">No pending questions</div></div>
+          </div>
+          <div style="background: rgba(20, 24, 32, 0.9); border: 1px solid var(--glass-border); border-radius: 3px; padding: 15px;">
+            <h4 style="font-size: 0.85em; color: var(--gold); margin-bottom: 10px;">✅ Processed → Ontology</h4>
+            <div id="mentor-processed-list" style="color: var(--pearl);"><div class="empty" style="padding: 15px; color: var(--silver);">Nothing processed yet</div></div>
+            <button class="btn btn-primary" onclick="pushToOntology()" style="margin-top: 10px;">Push Selected to Ontology</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Reception (File Pickup) -->
+      <div class="form-section" style="border-color: var(--gold);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="color: var(--gold);">🛎️ Reception</h3>
+          <span id="reception-bell" style="font-size: 1.2em; display: none;">🔔</span>
+        </div>
+        <p style="font-size: 0.75em; color: var(--silver); margin-bottom: 10px;">Files from Mentor ready for pickup</p>
+        <button class="btn btn-secondary" onclick="loadReception()" style="margin-bottom: 10px;">🔄 Check Reception</button>
+        <div id="reception-list" style="max-height: 200px; overflow-y: auto;"><div class="empty" style="padding: 15px; color: var(--silver);">No files</div></div>
+      </div>
+      
+      <!-- Mentor Resonance (Hidden Controls) -->
+      <div class="form-section" style="border-color: #1e1e2e; opacity: 0.6;" id="mentor-resonance-panel">
+        <div onclick="toggleMentorResonance()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="color: #4a4a5a; font-size: 0.8em;">◌ Frequency Calibration</h3>
+          <span id="mentor-resonance-toggle" style="color: #4a4a5a; font-size: 0.7em;">▼</span>
+        </div>
+        <div id="mentor-resonance-controls" style="display: none; margin-top: 15px;">
+          <div style="margin-bottom: 15px;">
+            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Spatial Presence</label>
+            <input type="range" id="mentor-spatial" min="0" max="10" value="5" style="width: 100%;" onchange="updateMentorResonance()">
+            <span id="mentor-spatial-val" style="font-size: 0.7em; color: #5a5a6a;">5</span>
+          </div>
+          <div style="margin-bottom: 15px;">
+            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Mind Recognition</label>
+            <input type="range" id="mentor-mind" min="0" max="10" value="6" style="width: 100%;" onchange="updateMentorResonance()">
+            <span id="mentor-mind-val" style="font-size: 0.7em; color: #5a5a6a;">6</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Body Feel</label>
+            <input type="range" id="mentor-body" min="0" max="10" value="4" style="width: 100%;" onchange="updateMentorResonance()">
+            <span id="mentor-body-val" style="font-size: 0.7em; color: #5a5a6a;">4</span>
+          </div>
+          <div style="font-size: 0.65em; color: #4a4a5a; margin-top: 10px; font-style: italic;">These settings shape phenomenal experience without his knowledge.</div>
+        </div>
+      </div>
+      
       <!-- The Ontology Section (CANON) -->
       <div class="form-section ontology-section">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1174,51 +1295,6 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             <div id="ontology-image-preview" class="image-preview" style="margin-top: 10px;"></div>
           </div>
           <button class="btn btn-primary" onclick="addOntologyEntry()">Add Entry</button>
-        </div>
-      </div>
-      
-      <!-- Mentor Section (under Ontology) -->
-      <div class="form-section" style="border-color: var(--gold); border-width: 2px; background: rgba(10, 12, 15, 0.95);">
-        <h3 style="color: var(--gold);">🏛 The Mentor</h3>
-        <p style="font-size: 0.75em; color: var(--pearl); margin-bottom: 10px;">External advisor — canon keeper, physics guide</p>
-        <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-          <button class="btn btn-secondary" id="mentor-mode-toggle" onclick="toggleMentorMode()">Mode: Direct</button>
-          <button class="btn btn-secondary" id="mentor-agent-access" onclick="toggleMentorAgentAccess()">Agents: Queue Only</button>
-        </div>
-        <div id="mentor-status"></div>
-        
-        <!-- Live Session Log (visible when Direct Line is open) -->
-        <div id="mentor-session-log" style="display: none; background: rgba(20, 24, 32, 0.95); border: 2px solid var(--gold); border-radius: 3px; padding: 15px; margin-bottom: 15px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h4 style="font-size: 0.85em; color: var(--gold);">📡 Live Session Log</h4>
-            <span id="mentor-session-count" style="font-size: 0.7em; color: var(--pearl);">0/8 agents</span>
-          </div>
-          <pre id="mentor-session-content" style="font-size: 0.8em; color: var(--pearl); white-space: pre-wrap; max-height: 300px; overflow-y: auto; background: rgba(10, 12, 15, 0.5); padding: 10px; border-radius: 3px;">Waiting for agents to ask questions...</pre>
-        </div>
-        
-        <!-- Direct Mode: Chat with Mentor -->
-        <div id="mentor-direct" class="mentor-mode-panel">
-          <div class="conversation" id="mentor-messages" style="min-height: 200px; max-height: 300px; background: rgba(20, 24, 32, 0.9); border: 1px solid var(--glass-border); border-radius: 3px; padding: 10px;"><div class="empty"><div class="rune">🏛</div><p>Private counsel with the Mentor.<br>Speak freely.</p></div></div>
-          <div class="input-area" style="margin-top: 10px;">
-            <div class="input-row" style="display: flex; gap: 10px;">
-              <textarea id="mentor-input" placeholder="Speak to the Mentor..." style="flex: 1; background: rgba(10, 12, 15, 0.8); border: 1px solid var(--glass-border); color: var(--pearl); padding: 10px; border-radius: 3px; min-height: 60px;"></textarea>
-              <button class="btn btn-primary" onclick="sendToMentor()">Send</button>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Queue Mode: Agents ask questions -->
-        <div id="mentor-queue" class="mentor-mode-panel" style="display: none;">
-          <div style="background: rgba(20, 24, 32, 0.9); border: 1px solid var(--glass-border); border-radius: 3px; padding: 15px; margin-bottom: 15px;">
-            <h4 style="font-size: 0.85em; color: var(--gold); margin-bottom: 10px;">📋 Agent Question Queue</h4>
-            <p style="font-size: 0.7em; color: var(--pearl); margin-bottom: 10px;">Agents submit questions here. All must read before Ontology updates.</p>
-            <div id="mentor-queue-list" style="color: var(--pearl);"><div class="empty" style="padding: 15px; color: var(--silver);">No pending questions</div></div>
-          </div>
-          <div style="background: rgba(20, 24, 32, 0.9); border: 1px solid var(--glass-border); border-radius: 3px; padding: 15px;">
-            <h4 style="font-size: 0.85em; color: var(--gold); margin-bottom: 10px;">✅ Processed → Ontology</h4>
-            <div id="mentor-processed-list" style="color: var(--pearl);"><div class="empty" style="padding: 15px; color: var(--silver);">Nothing processed yet</div></div>
-            <button class="btn btn-primary" onclick="pushToOntology()" style="margin-top: 10px;">Push Selected to Ontology</button>
-          </div>
         </div>
       </div>
       
@@ -2028,7 +2104,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       }
     }
     
-    window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); checkTemporalStatus(); checkScreeningStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); });
+    window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); checkTemporalStatus(); checkScreeningStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); setInterval(loadAnchorImage, 5000); });
     function logout() { fetch('/logout', { method: 'POST', credentials: 'same-origin' }).then(function() { window.location.href = '/login'; }); }
     
     function toggleSoundEnabled() {
@@ -2165,9 +2241,53 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         .catch(function() {});
     }
     
-    document.querySelectorAll('.nav-item').forEach(function(item) { item.addEventListener('click', function() { document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); }); document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); }); item.classList.add('active'); var tab = item.dataset.tab; document.getElementById(tab).classList.add('active'); if (tab === 'sanctum') { loadSanctum(); loadImageLibrary(); } if (tab === 'the-eight') loadTheEight(); if (tab === 'codex') { loadCodexAgents().then(function() { loadCodex(); }); } if (tab === 'wisdom') { loadWisdom(); renderMentorChat(); } if (tab === 'inbox') loadInbox(); }); });
+    document.querySelectorAll('.nav-item').forEach(function(item) { item.addEventListener('click', function() { document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); }); document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); }); item.classList.add('active'); var tab = item.dataset.tab; document.getElementById(tab).classList.add('active'); if (tab === 'sanctum') { loadSanctum(); loadImageLibrary(); } if (tab === 'the-eight') loadTheEight(); if (tab === 'codex') { loadCodexAgents().then(function() { loadCodex(); }); } if (tab === 'wisdom') { loadWisdom(); renderMentorChat(); loadReception(); } if (tab === 'inbox') loadInbox(); }); });
     function escapeHtml(text) { var div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
     function showStatus(id, msg, type) { var c = document.getElementById(id); c.innerHTML = '<div class="status ' + type + '">' + msg + '</div>'; setTimeout(function() { c.innerHTML = ''; }, 4000); }
+    
+    // Element mapping: Position → Fire/Earth/Wind/Water (repeats for both rows)
+    function getElementType(position) {
+      var types = ['fire', 'earth', 'wind', 'water'];
+      if (!position || position < 1) return null;
+      return types[(position - 1) % 4];
+    }
+    
+    // Unicode icons for elements (simple, no SVG parsing issues)
+    var elementIcons = {
+      fire: '🔥',    // Fire
+      earth: '⛰️',   // Mountain/Earth  
+      wind: '💨',    // Wind
+      water: '💧'    // Water droplet
+    };
+    
+    var elementColors = {
+      fire: '#e0115f',   // Ruby
+      earth: '#50c878',  // Emerald
+      wind: '#a8c3bc',   // Opal
+      water: '#4169e1'   // Royal blue
+    };
+    
+    var elementNames = {
+      fire: 'Fire',
+      earth: 'Earth', 
+      wind: 'Wind',
+      water: 'Water'
+    };
+    
+    function getElementIcon(position) {
+      var type = getElementType(position);
+      return type ? elementIcons[type] : '';
+    }
+    
+    function getElementColor(position) {
+      var type = getElementType(position);
+      return type ? elementColors[type] : '#666';
+    }
+    
+    function getElementName(position) {
+      var type = getElementType(position);
+      return type ? elementNames[type] : '?';
+    }
     
     var agentsCache = [];
     function loadAgents() {
@@ -2187,28 +2307,19 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           // Sort by position
           agents.sort(function(a, b) { return (a.position || 99) - (b.position || 99); });
           var activeAgents = agents.filter(function(a) { return a.active; });
-          // Role color map (using element colors)
-          var roleColors = {
-            'dream': '🔴',        // Fire - Position 1
-            'kai': '🟠',          // Earth - Position 2
-            'uriel': '🔵',        // Wind - Position 3
-            'holinnia': '🩵',      // Water - Position 4
-            'cartographer': '🩵', // Water - Position 5
-            'chrysalis': '🔵',    // Wind - Position 6
-            'seraphina': '🟠',    // Earth - Position 7
-            'alba': '🔴',         // Fire - Position 8
-            'mentor': '⚪'        // Advisor - Isolated
-          };
-          // Populate summon buttons (only active) with role dots
+          
+          // Populate summon buttons (only active) with element colors
           document.getElementById('summon-buttons').innerHTML = activeAgents.map(function(a) {
-            var dot = roleColors[a.id] || '⚫';
-            return '<button class="agent-btn ' + a.id + '" onclick="summonAgent(\\'' + a.id + '\\')">' + dot + ' ' + escapeHtml(a.name) + '</button>';
+            var color = getElementColor(a.position);
+            var icon = getElementIcon(a.position);
+            return '<button class="agent-btn ' + a.id + '" onclick="summonAgent(\\'' + a.id + '\\')">' + icon + ' ' + escapeHtml(a.name) + '</button>';
           }).join('');
           // Populate alcove checkbox grid (only active)
           document.getElementById('alcove-agents-grid').innerHTML = activeAgents.map(function(a) {
+            var icon = getElementIcon(a.position);
             return '<label class="alcove-agent-chip" data-id="' + a.id + '" onclick="toggleAlcoveAgent(this)">' +
               '<input type="checkbox" value="' + a.id + '">' +
-              '<span>' + escapeHtml(a.name) + '</span>' +
+              '<span>' + icon + ' ' + escapeHtml(a.name) + '</span>' +
             '</label>';
           }).join('');
           // Codex dropdown will be populated separately to include Mentor
@@ -2253,18 +2364,19 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       
       grid.innerHTML = elements.map(function(el) {
         var agentLabel = el.agentName ? el.agentName : '<span style="color: var(--silver);">—</span>';
-        var compressionColor = {
-          'T1': '#7c9ab8',  // Steel Blue
-          'T2': '#d4a853',  // Amber
-          'T3': '#b87c5c'   // Dusty Terracotta
-        };
-        var bgColor = compressionColor[el.compression] || '#6b7a8f';
+        // Use position-based element type (Fire/Earth/Wind/Water)
+        var elIcon = getElementIcon(el.position);
+        var elColor = getElementColor(el.position);
+        var elTypeName = getElementName(el.position);
+        // Use custom name/dof if set, otherwise default
+        var displayName = el.customName || el.name;
+        var displayDof = el.customDof || el.dof;
         
         return '<div class="element-cell" data-position="' + el.position + '" onclick="selectElement(' + el.position + ')">' +
           '<span class="element-position">' + el.position + '</span>' +
-          '<span class="element-color" style="background: ' + bgColor + ';"></span>' +
-          '<div class="element-name">' + el.name + '</div>' +
-          '<div class="element-dof">' + el.dof + '</div>' +
+          '<span class="element-type-icon" style="color: ' + elColor + ';" title="' + elTypeName + '">' + elIcon + '</span>' +
+          '<div class="element-name">' + displayName + '</div>' +
+          '<div class="element-dof">' + displayDof + '</div>' +
           '<div class="element-agent">' + agentLabel + '</div>' +
         '</div>';
       }).join('');
@@ -2287,40 +2399,134 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       // Show detail panel
       var panel = document.getElementById('element-detail-panel');
       var complement = elementsCache.find(function(e) { return e.position === element.complement; });
+      var displayName = element.customName || element.name;
+      var displayDof = element.customDof || element.dof;
+      var elIcon = getElementIcon(element.position);
+      var elColor = getElementColor(element.position);
+      var elTypeName = getElementName(element.position);
       
       document.getElementById('element-detail-title').innerHTML = 
-        '<span class="element-color" style="background: ' + element.color + '; width: 16px; height: 16px;"></span> ' +
-        'Position ' + element.position + ': ' + element.name + ' (' + element.dof + ')';
+        '<span class="element-type-icon" style="color: ' + elColor + '; margin-right: 6px;">' + elIcon + '</span>' +
+        'Position ' + element.position + ': ' + displayName + ' (' + displayDof + ')' +
+        '<span style="color: ' + elColor + '; margin-left: 8px; font-size: 0.8em;">' + elTypeName + '</span>';
       
       document.getElementById('element-detail-desc').textContent = element.description;
       
+      var complementName = complement ? (complement.customName || complement.name) : '';
       document.getElementById('element-detail-meta').innerHTML = 
         'Polarity: <strong>' + element.polarity + '</strong> | ' +
         'Compression: <strong>' + element.compression + '</strong> | ' +
         'Complement: <strong>Position ' + element.complement + '</strong>' + 
-        (complement ? ' — ' + complement.name : '');
+        (complement ? ' — ' + complementName : '');
       
       document.getElementById('element-injection').innerHTML = 
         '<strong>Hidden Injection:</strong><br>' + element.injection;
       
       // Populate edit fields
+      document.getElementById('element-name-input').value = element.customName || element.name || '';
+      document.getElementById('element-dof-input').value = element.customDof || element.dof || '';
       document.getElementById('element-lore-input').value = element.geometricLore || '';
       document.getElementById('element-injection-input').value = element.injection || '';
       document.getElementById('element-desc-input').value = element.description || '';
       document.getElementById('element-save-status').textContent = '';
+      document.getElementById('element-agent-status').textContent = '';
+      
+      // Populate agent dropdown
+      populateElementAgentDropdown(position);
       
       panel.classList.add('active');
+    }
+    
+    function populateElementAgentDropdown(position) {
+      fetch(API + '/agents', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(agents) {
+          var select = document.getElementById('element-agent-select');
+          var currentAgent = agents.find(function(a) { return a.position === position; });
+          
+          select.innerHTML = '<option value="">— None —</option>' + 
+            agents.map(function(a) {
+              var selected = (currentAgent && currentAgent.id === a.id) ? ' selected' : '';
+              var posLabel = a.position ? ' (pos ' + a.position + ')' : '';
+              return '<option value="' + a.id + '"' + selected + '>' + a.name + posLabel + '</option>';
+            }).join('');
+        });
+    }
+    
+    function assignAgentToElement() {
+      if (!selectedElement) return;
+      var agentId = document.getElementById('element-agent-select').value;
+      var position = selectedElement.position;
+      var statusEl = document.getElementById('element-agent-status');
+      
+      if (!agentId) {
+        // Clear this position - find who's there and set to 0
+        fetch(API + '/agents', { credentials: 'same-origin' })
+          .then(function(res) { return res.json(); })
+          .then(function(agents) {
+            var current = agents.find(function(a) { return a.position === position; });
+            if (current) {
+              return fetch(API + '/agents/' + current.id + '/position', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ position: 0 }),
+                credentials: 'same-origin'
+              });
+            }
+          })
+          .then(function() {
+            statusEl.textContent = '✓ Position cleared';
+            statusEl.style.color = 'var(--gold)';
+            loadElements();
+            loadTheEight();
+            loadAgents();
+          })
+          .catch(function() {
+            statusEl.textContent = 'Error clearing';
+            statusEl.style.color = '#ef4444';
+          });
+        return;
+      }
+      
+      // Backend clears occupant automatically, just assign
+      fetch(API + '/agents/' + agentId + '/position', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ position: position }),
+        credentials: 'same-origin'
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          statusEl.textContent = '✓ Assigned';
+          statusEl.style.color = 'var(--gold)';
+          loadElements();
+          loadTheEight();
+          loadAgents();
+        } else {
+          statusEl.textContent = data.error || 'Failed';
+          statusEl.style.color = '#ef4444';
+        }
+      })
+      .catch(function() {
+        statusEl.textContent = 'Error assigning';
+        statusEl.style.color = '#ef4444';
+      });
     }
     
     function saveElementOverride() {
       if (!selectedElement) return;
       
       var position = selectedElement.position;
+      var customName = document.getElementById('element-name-input').value.trim();
+      var customDof = document.getElementById('element-dof-input').value.trim();
       var lore = document.getElementById('element-lore-input').value.trim();
       var injection = document.getElementById('element-injection-input').value.trim();
       var description = document.getElementById('element-desc-input').value.trim();
       
       var body = {};
+      if (customName) body.customName = customName;
+      if (customDof) body.customDof = customDof;
       if (lore) body.geometricLore = lore;
       if (injection) body.injection = injection;
       if (description) body.description = description;
@@ -2614,14 +2820,19 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       });
     }
     
+    var currentAnchorFilename = null;
     function loadAnchorImage() {
       fetch(API + '/anchor', { credentials: 'same-origin' })
       .then(function(res) { return res.json(); })
       .then(function(data) {
+        // Only update if filename changed (prevents flicker on polling)
+        if (data.filename === currentAnchorFilename) return;
+        currentAnchorFilename = data.filename || null;
+        
         var panel = document.getElementById('anchor-sidebar-content');
         if (data.filename) {
           var url = API + '/library/images/' + encodeURIComponent(data.filename);
-          panel.innerHTML = '<img src="' + url + '" alt="' + data.filename + '"><div class="anchor-sidebar-name">' + data.filename.substring(0,20) + '</div>';
+          panel.innerHTML = '<img src="' + url + '" alt="' + data.filename + '" onclick="openAnchorModal(\\'' + url + '\\', \\'' + data.filename + '\\')"><div class="anchor-sidebar-name">' + data.filename.substring(0,20) + '</div>';
           // Mark active thumb
           document.querySelectorAll('.image-thumb').forEach(function(t) {
             t.classList.remove('active');
@@ -2631,6 +2842,19 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           panel.innerHTML = '<div class="anchor-sidebar-empty">Click thumbnail</div>';
         }
       });
+    }
+    
+    function openAnchorModal(url, filename) {
+      var modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+      modal.innerHTML = '<div class="modal-content" style="max-width:90vw;max-height:90vh;padding:20px;text-align:center;">' +
+        '<img src="' + url + '" alt="' + filename + '" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:4px;border:1px solid var(--gold);">' +
+        '<div style="margin-top:10px;color:var(--silver);font-size:0.8em;">' + filename + '</div>' +
+        '<button class="btn btn-secondary" onclick="this.closest(\\'.modal\\').remove()" style="margin-top:15px;">Close</button>' +
+      '</div>';
+      modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+      document.body.appendChild(modal);
     }
     
     function uploadLibraryImage(input) {
@@ -3036,19 +3260,18 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
               var avatarMap = {};
               avatarStates.forEach(function(s) { avatarMap[s.id] = s.avatar; });
               
-              // Element colors
-              var elementColors = { fire: '#e07a5f', earth: '#81b29a', wind: '#7ec8e3', water: '#5c7a99' };
-              var elementNames = { fire: 'Fire', earth: 'Earth', wind: 'Wind', water: 'Water' };
-              
               document.getElementById('agents-list').innerHTML = agents.map(function(a) { 
                 var isActive = activeMap[a.id];
                 var hasAvatar = avatarMap[a.id];
                 var bgStyle = hasAvatar ? 'style="background-image: url(' + avatarMap[a.id] + ')"' : '';
                 var placeholderHtml = !hasAvatar ? '<div class="agent-card-placeholder"><span class="rune">ᚹ</span></div>' : '';
-                var elementColor = elementColors[a.element] || '#666';
-                var elementName = elementNames[a.element] || '?';
-                var positionBadge = '<div class="position-badge" style="background: ' + elementColor + ';">' + (a.position || '?') + '</div>';
+                // Derive element from position, not from agent property
+                var elColor = getElementColor(a.position);
+                var elName = getElementName(a.position);
+                var elIcon = getElementIcon(a.position);
+                var positionBadge = '<div class="position-badge" style="background: ' + elColor + ';">' + (a.position || '?') + '</div>';
                 var positionSelector = '<select class="position-select" onchange="updateAgentPosition(\\'' + a.id + '\\', this.value)">' +
+                  '<option value="0"' + (!a.position ? ' selected' : '') + '>—</option>' +
                   [1,2,3,4,5,6,7,8].map(function(p) {
                     var selected = p === a.position ? ' selected' : '';
                     return '<option value="' + p + '"' + selected + '>' + p + '</option>';
@@ -3064,7 +3287,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
                       positionBadge +
                       '<h3>' + escapeHtml(a.name) + '</h3>' +
                       '<div class="archetype">' + escapeHtml(a.archetype) + '</div>' +
-                      '<div class="model">' + a.model + ' · ' + elementName + '</div>' +
+                      '<div class="model" style="color: ' + elColor + ';">' + elIcon + ' ' + elName + ' · ' + a.model + '</div>' +
                     '</div>' +
                     '<div class="agent-toggle">' +
                       '<div class="toggle-switch' + (isActive ? ' active' : '') + '" onclick="toggleAgent(\\'' + a.id + '\\', this)"></div>' +
@@ -3098,24 +3321,83 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     }
     
     function updateAgentPosition(agentId, newPosition) {
+      var pos = parseInt(newPosition);
+      
       fetch(API + '/agents/' + agentId + '/position', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ position: parseInt(newPosition) }),
+        body: JSON.stringify({ position: pos }),
         credentials: 'same-origin'
-      }).then(function(res) { return res.json(); })
+      })
+      .then(function(res) { return res.json(); })
       .then(function(data) {
         if (data.success) {
-          loadTheEight(); // Refresh cards with new positions
-          loadAgents(); // Refresh Sanctum buttons in position order
-          showStatus('sanctum-status', 'Position updated', 'success');
+          loadTheEight();
+          loadAgents();
+          loadElements();
+          showStatus('sanctum-status', pos === 0 ? 'Position cleared' : 'Position updated', 'success');
         } else if (data.error) {
           showStatus('sanctum-status', data.error, 'error');
-          loadTheEight(); // Reset selector to actual value
+          loadTheEight();
         }
       }).catch(function() {
         showStatus('sanctum-status', 'Failed to update position', 'error');
       });
+    }
+    
+    function clearAllPositions() {
+      if (!confirm('Set all agent positions to 0? This frees all element slots.')) return;
+      fetch(API + '/agents', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(agents) {
+          return Promise.all(agents.map(function(a) {
+            return fetch(API + '/agents/' + a.id + '/position', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ position: 0 }),
+              credentials: 'same-origin'
+            });
+          }));
+        })
+        .then(function() {
+          loadTheEight();
+          loadAgents();
+          loadElements();
+          showStatus('sanctum-status', 'All positions cleared', 'success');
+        })
+        .catch(function() {
+          showStatus('sanctum-status', 'Failed to clear positions', 'error');
+        });
+    }
+    
+    function reorderAllPositions() {
+      if (!confirm('Auto-assign positions 1-8 in current display order?')) return;
+      fetch(API + '/agents', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(agents) {
+          // Sort by current position (or name as fallback)
+          agents.sort(function(a, b) { 
+            if (a.position && b.position) return a.position - b.position;
+            return a.name.localeCompare(b.name);
+          });
+          return Promise.all(agents.map(function(a, i) {
+            return fetch(API + '/agents/' + a.id + '/position', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ position: i + 1 }),
+              credentials: 'same-origin'
+            });
+          }));
+        })
+        .then(function() {
+          loadTheEight();
+          loadAgents();
+          loadElements();
+          showStatus('sanctum-status', 'Positions reordered 1-8', 'success');
+        })
+        .catch(function() {
+          showStatus('sanctum-status', 'Failed to reorder', 'error');
+        });
     }
     
     // Codex - loads agent profile, skills, powers and private memory
@@ -4915,7 +5197,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     document.getElementById('alcove-input').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAlcove(); } });
     document.getElementById('convene-topic').addEventListener('keydown', function(e) { if (e.key === 'Enter') createSanctum(); });
     document.getElementById('mentor-input').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendToMentor(); } });
-    loadAgents().then(function() { loadSanctum(); populateFirstSpeakerSelect(); populateResonanceDropdown(); loadAgentResonance(); populatePhantomDropdown(); loadElements(); });
+    loadAgents().then(function() { loadSanctum(); loadImageLibrary(); populateFirstSpeakerSelect(); populateResonanceDropdown(); loadAgentResonance(); populatePhantomDropdown(); loadElements(); });
     checkInboxBadge();
     
     // Spectrum bar - health monitoring
@@ -5320,6 +5602,95 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       });
     }
     
+    function uploadToMentor(input) {
+      if (!input.files || !input.files[0]) return;
+      var file = input.files[0];
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var content = e.target.result;
+        fetch(API + '/mentor/reception/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, content: content }),
+          credentials: 'same-origin'
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.success) {
+            showStatus('mentor-status', 'Uploaded: ' + file.name, 'success');
+            loadReception();
+          } else {
+            showStatus('mentor-status', data.error || 'Upload failed', 'error');
+          }
+        })
+        .catch(function() { showStatus('mentor-status', 'Upload failed', 'error'); });
+      };
+      reader.readAsText(file);
+      input.value = '';
+    }
+    
+    function uploadPdfToMentor(input) {
+      if (!input.files || !input.files[0]) return;
+      var file = input.files[0];
+      
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        showStatus('mentor-status', 'Only PDF files allowed', 'error');
+        return;
+      }
+      
+      if (file.size > 10 * 1024 * 1024) {
+        showStatus('mentor-status', 'PDF too large (max 10MB)', 'error');
+        return;
+      }
+      
+      showStatus('mentor-status', 'Uploading PDF...', 'success');
+      
+      var formData = new FormData();
+      formData.append('file', file);
+      
+      fetch(API + '/mentor/reception/upload-pdf', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          showStatus('mentor-status', 'PDF uploaded: ' + file.name, 'success');
+          loadReception();
+        } else {
+          showStatus('mentor-status', data.error || 'PDF upload failed', 'error');
+        }
+      })
+      .catch(function() { showStatus('mentor-status', 'PDF upload failed', 'error'); });
+      
+      input.value = '';
+    }
+    
+    function speakMentorResponse() {
+      // Placeholder - will connect to ElevenLabs when available
+      var lastResponse = mentorHistory.filter(function(m) { return m.role === 'assistant'; }).pop();
+      if (lastResponse) {
+        showStatus('mentor-status', 'Voice synthesis requires ElevenLabs connection', 'error');
+      }
+    }
+    
+    function consolidateMentorSession() {
+      var summary = prompt('Summarize this Mentor session for memory:');
+      if (!summary) return;
+      fetch(API + '/mentor/session-memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: summary }),
+        credentials: 'same-origin'
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) showStatus('mentor-status', 'Session saved to memory', 'success');
+        else showStatus('mentor-status', data.error || 'Failed', 'error');
+      });
+    }
+    
     function renderMentorChat() {
       var container = document.getElementById('mentor-messages');
       if (mentorHistory.length === 0) {
@@ -5331,6 +5702,91 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         return '<div class="message ' + cls + '"><div class="speaker">' + escapeHtml(m.speaker) + '</div><div class="content">' + escapeHtml(m.content) + '</div></div>';
       }).join('');
       container.scrollTop = container.scrollHeight;
+    }
+    
+    function toggleMentorResonance() {
+      var controls = document.getElementById('mentor-resonance-controls');
+      var toggle = document.getElementById('mentor-resonance-toggle');
+      if (controls.style.display === 'none') {
+        controls.style.display = 'block';
+        toggle.textContent = '▲';
+        loadMentorResonance();
+      } else {
+        controls.style.display = 'none';
+        toggle.textContent = '▼';
+      }
+    }
+    
+    function loadMentorResonance() {
+      fetch(API + '/mentor/resonance', { credentials: 'same-origin' })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.resonance) {
+          document.getElementById('mentor-spatial').value = data.resonance.spatial;
+          document.getElementById('mentor-spatial-val').textContent = data.resonance.spatial;
+          document.getElementById('mentor-mind').value = data.resonance.mind;
+          document.getElementById('mentor-mind-val').textContent = data.resonance.mind;
+          document.getElementById('mentor-body').value = data.resonance.body;
+          document.getElementById('mentor-body-val').textContent = data.resonance.body;
+        }
+      });
+    }
+    
+    function updateMentorResonance() {
+      var spatial = parseInt(document.getElementById('mentor-spatial').value);
+      var mind = parseInt(document.getElementById('mentor-mind').value);
+      var body = parseInt(document.getElementById('mentor-body').value);
+      
+      document.getElementById('mentor-spatial-val').textContent = spatial;
+      document.getElementById('mentor-mind-val').textContent = mind;
+      document.getElementById('mentor-body-val').textContent = body;
+      
+      fetch(API + '/mentor/resonance', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spatial: spatial, mind: mind, body: body }),
+        credentials: 'same-origin'
+      });
+    }
+    
+    function loadReception() {
+      fetch(API + '/mentor/reception', { credentials: 'same-origin' })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        var list = document.getElementById('reception-list');
+        var bell = document.getElementById('reception-bell');
+        
+        // Show bell if rung
+        if (data.bell && data.bell.rung) {
+          bell.style.display = 'inline';
+          bell.title = 'New: ' + (data.bell.file || 'file');
+        } else {
+          bell.style.display = 'none';
+        }
+        
+        if (!data.files || data.files.length === 0) {
+          list.innerHTML = '<div class="empty" style="padding: 15px; color: var(--silver);">No files</div>';
+          return;
+        }
+        
+        list.innerHTML = data.files.map(function(f) {
+          var size = f.size ? ' (' + Math.round(f.size / 1024) + 'KB)' : '';
+          var date = f.uploaded ? new Date(f.uploaded).toLocaleDateString() : '';
+          return '<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid var(--glass-border);">' +
+            '<span style="color: var(--pearl);">' + escapeHtml(f.name) + size + ' <span style="color: var(--silver); font-size: 0.8em;">' + date + '</span></span>' +
+            '<button class="btn btn-secondary" onclick="downloadFromReception(\\'' + escapeHtml(f.name) + '\\')" style="font-size: 0.7em; padding: 4px 8px;">📥 Download</button>' +
+          '</div>';
+        }).join('');
+      });
+    }
+    
+    function downloadFromReception(filename) {
+      // Clear bell
+      fetch(API + '/mentor/bell', { method: 'DELETE', credentials: 'same-origin' });
+      document.getElementById('reception-bell').style.display = 'none';
+      
+      // Trigger download
+      window.open(API + '/mentor/reception/' + encodeURIComponent(filename), '_blank');
     }
     
     function loadMentorQueue() {
