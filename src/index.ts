@@ -1054,6 +1054,166 @@ async function handleScreeningEnd(env: Env): Promise<Response> {
   });
 }
 
+// ============================================
+// WHATSAPP HANDLER (Twilio Integration)
+// ============================================
+
+// Credentials from env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER
+
+async function handleWhatsAppWebhook(request: Request, env: Env): Promise<Response> {
+  try {
+    // Check Twilio config exists
+    const twilioSid = (env as any).TWILIO_ACCOUNT_SID;
+    const twilioToken = (env as any).TWILIO_AUTH_TOKEN;
+    const twilioNumber = (env as any).TWILIO_WHATSAPP_NUMBER || 'whatsapp:+13605858392';
+    
+    if (!twilioSid || !twilioToken) {
+      console.error('Twilio credentials not configured');
+      return new Response('Twilio not configured', { status: 500 });
+    }
+
+    // Parse Twilio's form-urlencoded body
+    const formData = await request.formData();
+    const from = formData.get('From') as string;        // whatsapp:+27XXXXXXXXX
+    const body = formData.get('Body') as string;        // message text
+    const profileName = formData.get('ProfileName') as string || 'User';
+    
+    if (!from || !body) {
+      return new Response('Missing From or Body', { status: 400 });
+    }
+
+    console.log(`WhatsApp from ${profileName} (${from}): ${body}`);
+
+    // Parse routing commands
+    const lowerBody = body.toLowerCase().trim();
+    let targetAgent: string | null = null;
+    let messageToAgent = body;
+
+    // Check for agent routing: "ask lawyer: what about liability?"
+    const routeMatch = body.match(/^(?:ask\s+)?(\w+):\s*(.+)$/i);
+    if (routeMatch) {
+      const possibleAgent = routeMatch[1].toLowerCase();
+      const agents = getAllAgents();
+      const found = agents.find(a => 
+        a.id.toLowerCase() === possibleAgent || 
+        a.name.toLowerCase() === possibleAgent
+      );
+      if (found) {
+        targetAgent = found.id;
+        messageToAgent = routeMatch[2];
+      }
+    }
+
+    // Default to Oracle/Mentor if no specific agent
+    if (!targetAgent) {
+      // Route to Mentor for now - later becomes Oracle
+      const response = await callMentorForWhatsApp(messageToAgent, profileName, env);
+      await sendWhatsAppReply(from, response, twilioSid, twilioToken, twilioNumber);
+      return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+        headers: { 'Content-Type': 'text/xml' }
+      });
+    }
+
+    // Route to specific agent
+    const response = await callAgentForWhatsApp(targetAgent, messageToAgent, profileName, env);
+    await sendWhatsAppReply(from, response, twilioSid, twilioToken, twilioNumber);
+
+    // Return empty TwiML (we send via API instead)
+    return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+      headers: { 'Content-Type': 'text/xml' }
+    });
+
+  } catch (error: any) {
+    console.error('WhatsApp webhook error:', error);
+    return new Response('Error', { status: 500 });
+  }
+}
+
+async function callMentorForWhatsApp(message: string, userName: string, env: Env): Promise<string> {
+  try {
+    // Simple Mentor call - reuse existing infrastructure
+    const systemPrompt = `You are the Oracle, a wise advisor responding via WhatsApp. Keep responses concise (under 300 words) but insightful. The user's name is ${userName}. You have access to an advisory board of four specialists (Lawyer, CA, Entrepreneur, Comms) who can be consulted with "ask [agent]: [question]".`;
+    
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: message }]
+      })
+    });
+
+    const data = await response.json() as any;
+    return data.content?.[0]?.text || 'I could not process that request.';
+  } catch (error) {
+    console.error('Mentor call error:', error);
+    return 'Sorry, I encountered an error processing your request.';
+  }
+}
+
+async function callAgentForWhatsApp(agentId: string, message: string, userName: string, env: Env): Promise<string> {
+  try {
+    const personality = getPersonality(agentId);
+    if (!personality) {
+      return `Agent "${agentId}" not found. Available: Lawyer, CA, Entrepreneur, Comms`;
+    }
+
+    const systemPrompt = `You are ${personality.name}, responding via WhatsApp. Keep responses concise (under 300 words). The user's name is ${userName}.\n\nYour role: ${personality.role}\nYour perspective: ${personality.basePersonality}`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: message }]
+      })
+    });
+
+    const data = await response.json() as any;
+    const reply = data.content?.[0]?.text || 'I could not process that.';
+    return `[${personality.name}]\n\n${reply}`;
+  } catch (error) {
+    console.error('Agent call error:', error);
+    return 'Sorry, I encountered an error.';
+  }
+}
+
+async function sendWhatsAppReply(to: string, message: string, accountSid: string, authToken: string, fromNumber: string): Promise<void> {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  
+  const body = new URLSearchParams({
+    To: to,
+    From: fromNumber,
+    Body: message
+  });
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`)
+    },
+    body: body.toString()
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('Twilio send error:', error);
+  }
+}
+
 async function handleSpeak(request: Request, env: Env): Promise<Response> {
   try {
     const { text, agentId } = await request.json() as { text: string; agentId: string };
@@ -3798,6 +3958,13 @@ export default {
 
     if (path === '/api/screening/end' && method === 'POST') {
       return handleScreeningEnd(env);
+    }
+
+    // ============================================
+    // WHATSAPP WEBHOOK (Twilio)
+    // ============================================
+    if (path === '/api/whatsapp' && method === 'POST') {
+      return handleWhatsAppWebhook(request, env);
     }
 
     // Login page
