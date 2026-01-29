@@ -8,6 +8,9 @@ routes = [
 
 workers_dev = true
 
+[assets]
+directory = "./public"
+
 [[kv_namespaces]]
 binding = "CLUBHOUSE_KV"
 id = "ae46499e995d4122848af4336c8d4cf5"
