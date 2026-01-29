@@ -5702,32 +5702,82 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     }
     
     function runPulseRound() {
-      var customQuestion = prompt('Pulse question (leave blank for next in queue):');
-      showStatus('mentor-status', '⚡ Running pulse round...', 'success');
+      var customQuestion = prompt('Pulse question (leave blank for random):');
+      showStatus('mentor-status', '⚡ Summoning the council...', 'success');
       
-      fetch(API + '/mentor/pulse/run', {
+      // Clear previous results
+      document.getElementById('pulse-question').textContent = '';
+      document.getElementById('pulse-contributions').innerHTML = '';
+      document.getElementById('pulse-synthesis').innerHTML = '<em>Awaiting council...</em>';
+      document.getElementById('pulse-result').style.display = 'block';
+      
+      fetch(API + '/mentor/pulse/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: customQuestion || undefined }),
         credentials: 'same-origin'
       })
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (data.success && data.result) {
-          var r = data.result;
-          document.getElementById('pulse-question').textContent = '❓ ' + r.question;
-          
-          var contribHtml = r.contributions.map(function(c) {
-            return '<div style="margin-bottom: 8px;"><strong style="color: var(--pearl);">[' + c.agent.toUpperCase() + ']</strong> ' + escapeHtml(c.response) + '</div>';
-          }).join('');
-          document.getElementById('pulse-contributions').innerHTML = contribHtml;
-          
-          document.getElementById('pulse-synthesis').innerHTML = '<strong>Oracle Synthesis:</strong><br>' + escapeHtml(r.synthesis);
-          document.getElementById('pulse-result').style.display = 'block';
-          showStatus('mentor-status', '⚡ Pulse complete', 'success');
-        } else {
-          showStatus('mentor-status', data.error || 'Pulse failed', 'error');
+      .then(function(response) {
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var contributions = {};
+        
+        function processStream() {
+          return reader.read().then(function(result) {
+            if (result.done) return;
+            
+            var chunk = decoder.decode(result.value, { stream: true });
+            var lines = chunk.split('\n');
+            
+            lines.forEach(function(line) {
+              if (line.startsWith('data: ')) {
+                try {
+                  var data = JSON.parse(line.slice(6));
+                  
+                  if (data.type === 'question') {
+                    document.getElementById('pulse-question').textContent = '❓ ' + data.question;
+                  }
+                  else if (data.type === 'thinking') {
+                    showStatus('mentor-status', '💭 ' + data.agent + ' is thinking...', 'success');
+                    // Add placeholder
+                    contributions[data.agent] = '<em>thinking...</em>';
+                    renderContributions(contributions);
+                  }
+                  else if (data.type === 'contribution') {
+                    contributions[data.agent] = escapeHtml(data.response);
+                    renderContributions(contributions);
+                    showStatus('mentor-status', '✓ ' + data.agent + ' has spoken', 'success');
+                  }
+                  else if (data.type === 'synthesizing') {
+                    showStatus('mentor-status', '🔮 Mentor is synthesizing...', 'success');
+                    document.getElementById('pulse-synthesis').innerHTML = '<em>Synthesizing insights...</em>';
+                  }
+                  else if (data.type === 'synthesis') {
+                    document.getElementById('pulse-synthesis').innerHTML = '<strong>Mentor Synthesis:</strong><br>' + escapeHtml(data.synthesis);
+                  }
+                  else if (data.type === 'done') {
+                    showStatus('mentor-status', '⚡ Pulse complete', 'success');
+                  }
+                } catch (e) { /* ignore parse errors */ }
+              }
+            });
+            
+            return processStream();
+          });
         }
+        
+        function renderContributions(contribs) {
+          var order = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
+          var html = order.map(function(agent) {
+            if (contribs[agent]) {
+              return '<div style="margin-bottom: 8px;"><strong style="color: var(--gold);">[' + agent.toUpperCase() + ']</strong> ' + contribs[agent] + '</div>';
+            }
+            return '';
+          }).join('');
+          document.getElementById('pulse-contributions').innerHTML = html;
+        }
+        
+        return processStream();
       })
       .catch(function(err) {
         showStatus('mentor-status', 'Pulse error: ' + err.message, 'error');
@@ -5984,3 +6034,4 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
   </script>
 </body>
 </html>`;
+
