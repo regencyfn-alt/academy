@@ -1,4 +1,5 @@
 // Academy v2.0 - Restructured 29 Jan 2026
+// Deploy trigger: wrangler.toml fixed
 import { personalities, getPersonality, getAllAgents, getAllAgentsIncludingIsolated, AgentPersonality } from './personalities';
 import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } from './modules/phantoms';
 import { handleMentorRoute } from './modules/mentor';
