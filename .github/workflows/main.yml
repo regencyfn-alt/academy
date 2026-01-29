@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'src/**'
+  - '*.ts'
+  - 'modules/**'
   workflow_dispatch:
 
 jobs:
