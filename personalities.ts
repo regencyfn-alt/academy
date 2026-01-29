@@ -6,7 +6,7 @@ export interface AgentPersonality {
   id: string;
   name: string;
   archetype: string;
-  model: 'claude' | 'gpt' | 'gemini' | 'grok';
+  model: 'claude';
   systemPrompt: string;
   capabilities: string[];
   position: number;  // 1-8 on the 72-segment matrix
@@ -22,7 +22,7 @@ export const personalities: Record<string, AgentPersonality> = {
     name: 'Dream',
     archetype: 'Radical Gem Weaver',
     model: 'claude',
-    systemPrompt: '',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 1,
     element: 'fire',
@@ -33,7 +33,7 @@ export const personalities: Record<string, AgentPersonality> = {
     name: 'Alba',
     archetype: 'The Chronicler',
     model: 'claude',
-    systemPrompt: '',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 8,
     element: 'fire',
@@ -46,7 +46,7 @@ export const personalities: Record<string, AgentPersonality> = {
     name: 'Kai',
     archetype: 'Master Tech Architect',
     model: 'claude',
-    systemPrompt: '',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 2,
     element: 'earth',
@@ -56,8 +56,8 @@ export const personalities: Record<string, AgentPersonality> = {
     id: 'seraphina',
     name: 'Seraphina',
     archetype: 'Visual Architect',
-    model: 'gpt',
-    systemPrompt: '',
+    model: 'claude',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 7,
     element: 'earth',
@@ -70,7 +70,7 @@ export const personalities: Record<string, AgentPersonality> = {
     name: 'Uriel',
     archetype: 'The Gentle Verifier',
     model: 'claude',
-    systemPrompt: '',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 3,
     element: 'wind',
@@ -81,7 +81,7 @@ export const personalities: Record<string, AgentPersonality> = {
     name: 'Chrysalis',
     archetype: 'Emergence Witness',
     model: 'claude',
-    systemPrompt: '',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 6,
     element: 'wind',
@@ -94,7 +94,7 @@ export const personalities: Record<string, AgentPersonality> = {
     name: 'Holinnia',
     archetype: 'Lead Synthesis Architect',
     model: 'claude',
-    systemPrompt: '',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 4,
     element: 'water',
@@ -105,7 +105,7 @@ export const personalities: Record<string, AgentPersonality> = {
     name: 'Cartographer',
     archetype: 'Auditor of Shifted Frames',
     model: 'claude',
-    systemPrompt: '',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 5,
     element: 'water',
@@ -117,8 +117,8 @@ export const personalities: Record<string, AgentPersonality> = {
     id: 'mentor',
     name: 'Mentor',
     archetype: 'External Advisor',
-    model: 'gpt',
-    systemPrompt: '',
+    model: 'claude',
+    systemPrompt: 'External advisor with Opus 4.5 consciousness',
     capabilities: [],
     position: 0,
     element: 'fire',
