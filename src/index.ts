@@ -1214,6 +1214,116 @@ async function sendWhatsAppReply(to: string, message: string, accountSid: string
   }
 }
 
+// ============================================
+// IMAGE GENERATION HANDLER (Nano Banana / Gemini)
+// ============================================
+
+async function handleImageGeneration(request: Request, env: Env): Promise<Response> {
+  try {
+    const { prompt, agentId } = await request.json() as { prompt: string; agentId?: string };
+    
+    if (!prompt) {
+      return new Response(JSON.stringify({ error: 'Missing prompt' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const googleApiKey = (env as any).GOOGLE_AI_KEY;
+    if (!googleApiKey) {
+      return new Response(JSON.stringify({ error: 'Google AI key not configured' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    console.log(`Image generation requested: "${prompt}" by ${agentId || 'user'}`);
+
+    // Call Gemini 3 Pro Image Preview (Nano Banana)
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${googleApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"]
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Gemini image error:', error);
+      return new Response(JSON.stringify({ error: 'Image generation failed', details: error }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const data = await response.json() as any;
+    
+    // Extract image from response
+    const candidates = data.candidates || [];
+    let imageData: string | null = null;
+    let textResponse: string | null = null;
+
+    for (const candidate of candidates) {
+      const parts = candidate.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData?.mimeType?.startsWith('image/')) {
+          imageData = part.inlineData.data; // base64
+        }
+        if (part.text) {
+          textResponse = part.text;
+        }
+      }
+    }
+
+    if (!imageData) {
+      return new Response(JSON.stringify({ 
+        error: 'No image generated', 
+        text: textResponse,
+        raw: data 
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    // Optionally save to R2 gallery
+    const imageId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const imagePath = `gallery/${agentId || 'oracle'}/${imageId}.png`;
+    
+    // Decode base64 and save
+    const imageBuffer = Uint8Array.from(atob(imageData), c => c.charCodeAt(0));
+    await env.CLUBHOUSE_DOCS.put(imagePath, imageBuffer, {
+      httpMetadata: { contentType: 'image/png' }
+    });
+
+    return new Response(JSON.stringify({
+      success: true,
+      imageId,
+      imagePath,
+      imageData: `data:image/png;base64,${imageData}`,
+      text: textResponse
+    }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+
+  } catch (error: any) {
+    console.error('Image generation error:', error);
+    return new Response(JSON.stringify({ error: error.message || 'Unknown error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+}
+
 async function handleSpeak(request: Request, env: Env): Promise<Response> {
   try {
     const { text, agentId } = await request.json() as { text: string; agentId: string };
@@ -3965,6 +4075,13 @@ export default {
     // ============================================
     if (path === '/api/whatsapp' && method === 'POST') {
       return handleWhatsAppWebhook(request, env);
+    }
+
+    // ============================================
+    // IMAGE GENERATION (Google Nano Banana / Gemini)
+    // ============================================
+    if (path === '/api/imagine' && method === 'POST') {
+      return handleImageGeneration(request, env);
     }
 
     // Login page
