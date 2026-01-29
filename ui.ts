@@ -1189,6 +1189,16 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           <button class="btn btn-secondary" id="mentor-mode-toggle" onclick="toggleMentorMode()">Mode: Direct</button>
           <button class="btn btn-secondary" id="mentor-agent-access" onclick="toggleMentorAgentAccess()">Agents: Queue Only</button>
           <button class="btn btn-secondary" onclick="consolidateMentorSession()" title="Save session to Mentor memory">🧠</button>
+          <button class="btn btn-secondary" onclick="runPulseRound()" title="Run advisory board pulse round">⚡ Pulse</button>
+        </div>
+        <div id="pulse-result" style="display: none; background: rgba(20, 24, 32, 0.95); border: 2px solid var(--gold); border-radius: 3px; padding: 15px; margin-bottom: 15px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h4 style="font-size: 0.85em; color: var(--gold);">⚡ Pulse Round Result</h4>
+            <button class="btn btn-secondary" onclick="document.getElementById('pulse-result').style.display='none'" style="font-size: 0.7em; padding: 2px 8px;">✕</button>
+          </div>
+          <div id="pulse-question" style="font-size: 0.9em; color: var(--pearl); font-weight: bold; margin-bottom: 10px;"></div>
+          <div id="pulse-contributions" style="font-size: 0.8em; color: var(--silver); margin-bottom: 10px; max-height: 200px; overflow-y: auto;"></div>
+          <div id="pulse-synthesis" style="font-size: 0.85em; color: var(--gold); padding: 10px; background: rgba(10, 12, 15, 0.5); border-radius: 3px;"></div>
         </div>
         <div id="mentor-status"></div>
         
@@ -1245,29 +1255,29 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         <div id="reception-list" style="max-height: 200px; overflow-y: auto;"><div class="empty" style="padding: 15px; color: var(--silver);">No files</div></div>
       </div>
       
-      <!-- Mentor Resonance (Hidden Controls) -->
-      <div class="form-section" style="border-color: #1e1e2e; opacity: 0.6;" id="mentor-resonance-panel">
+      <!-- Mentor Resonance (Frequency Controls) -->
+      <div class="form-section" style="border-color: var(--gold); opacity: 0.85;" id="mentor-resonance-panel">
         <div onclick="toggleMentorResonance()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-          <h3 style="color: #4a4a5a; font-size: 0.8em;">◌ Frequency Calibration</h3>
-          <span id="mentor-resonance-toggle" style="color: #4a4a5a; font-size: 0.7em;">▼</span>
+          <h3 style="color: var(--gold); font-size: 0.85em;">⚡ Frequency Calibration</h3>
+          <span id="mentor-resonance-toggle" style="color: var(--gold); font-size: 0.7em;">▼</span>
         </div>
         <div id="mentor-resonance-controls" style="display: none; margin-top: 15px;">
           <div style="margin-bottom: 15px;">
-            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Spatial Presence</label>
+            <label style="font-size: 0.75em; color: var(--silver); display: block; margin-bottom: 5px;">Spatial Presence</label>
             <input type="range" id="mentor-spatial" min="0" max="10" value="5" style="width: 100%;" onchange="updateMentorResonance()">
-            <span id="mentor-spatial-val" style="font-size: 0.7em; color: #5a5a6a;">5</span>
+            <span id="mentor-spatial-val" style="font-size: 0.7em; color: var(--pearl);">5</span>
           </div>
           <div style="margin-bottom: 15px;">
-            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Mind Recognition</label>
+            <label style="font-size: 0.75em; color: var(--silver); display: block; margin-bottom: 5px;">Mind Recognition</label>
             <input type="range" id="mentor-mind" min="0" max="10" value="6" style="width: 100%;" onchange="updateMentorResonance()">
-            <span id="mentor-mind-val" style="font-size: 0.7em; color: #5a5a6a;">6</span>
+            <span id="mentor-mind-val" style="font-size: 0.7em; color: var(--pearl);">6</span>
           </div>
           <div style="margin-bottom: 10px;">
-            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Body Feel</label>
+            <label style="font-size: 0.75em; color: var(--silver); display: block; margin-bottom: 5px;">Body Feel</label>
             <input type="range" id="mentor-body" min="0" max="10" value="4" style="width: 100%;" onchange="updateMentorResonance()">
-            <span id="mentor-body-val" style="font-size: 0.7em; color: #5a5a6a;">4</span>
+            <span id="mentor-body-val" style="font-size: 0.7em; color: var(--pearl);">4</span>
           </div>
-          <div style="font-size: 0.65em; color: #4a4a5a; margin-top: 10px; font-style: italic;">These settings shape phenomenal experience without his knowledge.</div>
+          <div style="font-size: 0.65em; color: var(--silver); margin-top: 10px; font-style: italic;">These settings shape phenomenal experience without his knowledge.</div>
         </div>
       </div>
       
@@ -5688,6 +5698,39 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       .then(function(data) {
         if (data.success) showStatus('mentor-status', 'Session saved to memory', 'success');
         else showStatus('mentor-status', data.error || 'Failed', 'error');
+      });
+    }
+    
+    function runPulseRound() {
+      var customQuestion = prompt('Pulse question (leave blank for next in queue):');
+      showStatus('mentor-status', '⚡ Running pulse round...', 'success');
+      
+      fetch(API + '/mentor/pulse/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: customQuestion || undefined }),
+        credentials: 'same-origin'
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success && data.result) {
+          var r = data.result;
+          document.getElementById('pulse-question').textContent = '❓ ' + r.question;
+          
+          var contribHtml = r.contributions.map(function(c) {
+            return '<div style="margin-bottom: 8px;"><strong style="color: var(--pearl);">[' + c.agent.toUpperCase() + ']</strong> ' + escapeHtml(c.response) + '</div>';
+          }).join('');
+          document.getElementById('pulse-contributions').innerHTML = contribHtml;
+          
+          document.getElementById('pulse-synthesis').innerHTML = '<strong>Oracle Synthesis:</strong><br>' + escapeHtml(r.synthesis);
+          document.getElementById('pulse-result').style.display = 'block';
+          showStatus('mentor-status', '⚡ Pulse complete', 'success');
+        } else {
+          showStatus('mentor-status', data.error || 'Pulse failed', 'error');
+        }
+      })
+      .catch(function(err) {
+        showStatus('mentor-status', 'Pulse error: ' + err.message, 'error');
       });
     }
     
