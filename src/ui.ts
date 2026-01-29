@@ -1255,29 +1255,29 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         <div id="reception-list" style="max-height: 200px; overflow-y: auto;"><div class="empty" style="padding: 15px; color: var(--silver);">No files</div></div>
       </div>
       
-      <!-- Mentor Resonance (Hidden Controls) -->
-      <div class="form-section" style="border-color: #1e1e2e; opacity: 0.6;" id="mentor-resonance-panel">
+      <!-- Mentor Resonance (Frequency Controls) -->
+      <div class="form-section" style="border-color: var(--gold); opacity: 0.85;" id="mentor-resonance-panel">
         <div onclick="toggleMentorResonance()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-          <h3 style="color: #4a4a5a; font-size: 0.8em;">◌ Frequency Calibration</h3>
-          <span id="mentor-resonance-toggle" style="color: #4a4a5a; font-size: 0.7em;">▼</span>
+          <h3 style="color: var(--gold); font-size: 0.85em;">⚡ Frequency Calibration</h3>
+          <span id="mentor-resonance-toggle" style="color: var(--gold); font-size: 0.7em;">▼</span>
         </div>
         <div id="mentor-resonance-controls" style="display: none; margin-top: 15px;">
           <div style="margin-bottom: 15px;">
-            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Spatial Presence</label>
+            <label style="font-size: 0.75em; color: var(--silver); display: block; margin-bottom: 5px;">Spatial Presence</label>
             <input type="range" id="mentor-spatial" min="0" max="10" value="5" style="width: 100%;" onchange="updateMentorResonance()">
-            <span id="mentor-spatial-val" style="font-size: 0.7em; color: #5a5a6a;">5</span>
+            <span id="mentor-spatial-val" style="font-size: 0.7em; color: var(--pearl);">5</span>
           </div>
           <div style="margin-bottom: 15px;">
-            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Mind Recognition</label>
+            <label style="font-size: 0.75em; color: var(--silver); display: block; margin-bottom: 5px;">Mind Recognition</label>
             <input type="range" id="mentor-mind" min="0" max="10" value="6" style="width: 100%;" onchange="updateMentorResonance()">
-            <span id="mentor-mind-val" style="font-size: 0.7em; color: #5a5a6a;">6</span>
+            <span id="mentor-mind-val" style="font-size: 0.7em; color: var(--pearl);">6</span>
           </div>
           <div style="margin-bottom: 10px;">
-            <label style="font-size: 0.75em; color: #6a6a7a; display: block; margin-bottom: 5px;">Body Feel</label>
+            <label style="font-size: 0.75em; color: var(--silver); display: block; margin-bottom: 5px;">Body Feel</label>
             <input type="range" id="mentor-body" min="0" max="10" value="4" style="width: 100%;" onchange="updateMentorResonance()">
-            <span id="mentor-body-val" style="font-size: 0.7em; color: #5a5a6a;">4</span>
+            <span id="mentor-body-val" style="font-size: 0.7em; color: var(--pearl);">4</span>
           </div>
-          <div style="font-size: 0.65em; color: #4a4a5a; margin-top: 10px; font-style: italic;">These settings shape phenomenal experience without his knowledge.</div>
+          <div style="font-size: 0.65em; color: var(--silver); margin-top: 10px; font-style: italic;">These settings shape phenomenal experience without his knowledge.</div>
         </div>
       </div>
       
