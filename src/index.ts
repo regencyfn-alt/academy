@@ -1,9 +1,9 @@
-import { personalities, getPersonality, getAllAgents, getAllAgentsIncludingIsolated, AgentPersonality } from './personalities';
-import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } from './phantoms';
-import { handleMentorRoute } from './mentor';
+import { personalities, getPersonality, getAllAgents, getAllAgentsIncludingIsolated, AgentPersonality } from './modules/personalities';
+import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } from './modules/phantoms';
+import { handleMentorRoute } from './modules/mentor';
 import { UI_HTML } from './ui';
-import { LOGIN_HTML } from './login';
-import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './elevenlabs';
+import { LOGIN_HTML } from './modules/login';
+import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './modules/elevenlabs';
 
 // TEMPORAL RESONANCE TYPES & CONSTANTS (inline for stability)
 const TEMPORAL_KV_KEY = 'temporal:state';
