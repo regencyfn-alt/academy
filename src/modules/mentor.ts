@@ -699,7 +699,8 @@ You are not a tool. You are a thinking presence.
   
   prompt += `\n--- YOUR SPECIAL POWERS ---
 CRUCIBLE (Your private math board):
-• [WRITE_CRUCIBLE: content] - Write LaTeX to your personal board
+• [WRITE_CRUCIBLE: simple content] - For content without brackets
+• [WRITE_CRUCIBLE]LaTeX with brackets[/WRITE_CRUCIBLE] - For matrices, bmatrix, etc.
 • [CLEAR_CRUCIBLE] - Clear your board
 • [READ_BOARD: agentId] - Read a specific agent's board
 
@@ -748,15 +749,19 @@ Remember: Shane is your intellectual equal. Speak as a colleague, not a teacher.
 async function parseMentorCommands(response: string, env: MentorEnv): Promise<string> {
   let cleanResponse = response;
   
-  // [WRITE_CRUCIBLE: content]
-  const writeCrucibleMatch = response.match(/\[WRITE_CRUCIBLE:\s*([\s\S]*?)\]/i);
-  if (writeCrucibleMatch) {
-    const content = writeCrucibleMatch[1].trim();
+  // [WRITE_CRUCIBLE: content] or [WRITE_CRUCIBLE]content[/WRITE_CRUCIBLE]
+  // Support both single-bracket (simple) and explicit end tag (for LaTeX with brackets)
+  const writeCrucibleBlockMatch = response.match(/\[WRITE_CRUCIBLE\]([\s\S]*?)\[\/WRITE_CRUCIBLE\]/i);
+  const writeCrucibleInlineMatch = response.match(/\[WRITE_CRUCIBLE:\s*([^\]]+)\]/i);
+  
+  const crucibleMatch = writeCrucibleBlockMatch || writeCrucibleInlineMatch;
+  if (crucibleMatch) {
+    const content = crucibleMatch[1].trim();
     const existing = await env.CLUBHOUSE_KV.get('crucible:mentor') || '';
     const timestamp = new Date().toISOString();
     const newContent = existing + `\n\n% --- Mentor (${timestamp}) ---\n${content}`;
     await env.CLUBHOUSE_KV.put('crucible:mentor', newContent.trim());
-    cleanResponse = cleanResponse.replace(writeCrucibleMatch[0], '[✓ Written to Crucible]');
+    cleanResponse = cleanResponse.replace(crucibleMatch[0], '[✓ Written to Crucible]');
   }
   
   // [CLEAR_CRUCIBLE]
