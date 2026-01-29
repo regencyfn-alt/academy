@@ -19,9 +19,27 @@ interface MentorContext {
   library: string;
   coldArchives: string;
   resonance: { spatial: number; mind: number; body: number } | null;
+  behaviour: { traits: string[] } | null;
+}
+
+interface PulseConfig {
+  enabled: boolean;
+  questionsPerDay: number;
+  turnsPerAgent: number;
+  agents: string[];
+  deliveryChannel: 'none' | 'whatsapp' | 'email';
+  whatsappNumber?: string;
+}
+
+interface PulseResult {
+  timestamp: string;
+  question: string;
+  contributions: { agent: string; response: string }[];
+  synthesis: string;
 }
 
 const AGENT_IDS = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
+const ADVISORY_AGENT_IDS = ['dealmaker', 'operator', 'strategist', 'auditor'];
 
 // ============================================
 // MAIN ROUTER - Called from index.ts
@@ -264,6 +282,19 @@ export async function handleMentorRoute(
       }
     }
 
+    // GET/PUT /mentor/behaviour - Hidden behaviour traits
+    if (path === '/mentor/behaviour') {
+      if (method === 'GET') {
+        const behaviour = await env.CLUBHOUSE_KV.get('behaviour:mentor', 'json') as { traits: string[] } | null;
+        return jsonResponse({ traits: behaviour?.traits || [] });
+      }
+      if (method === 'PUT') {
+        const body = await request.json() as { traits: string[] };
+        await env.CLUBHOUSE_KV.put('behaviour:mentor', JSON.stringify({ traits: body.traits || [] }));
+        return jsonResponse({ success: true });
+      }
+    }
+
     // GET /mentor/agent-access
     if (path === '/mentor/agent-access' && method === 'GET') {
       const access = await env.CLUBHOUSE_KV.get('mentor:agent-access', 'json') as { enabled: boolean } | null;
@@ -418,6 +449,57 @@ export async function handleMentorRoute(
       return jsonResponse({ success: true });
     }
 
+    // ============================================
+    // PULSE SYSTEM (Automated Daily Rounds)
+    // ============================================
+
+    // GET /mentor/pulse/questions - Get question queue
+    if (path === '/mentor/pulse/questions' && method === 'GET') {
+      const questions = await env.CLUBHOUSE_KV.get('pulse:questions', 'json') as string[] | null;
+      return jsonResponse({ questions: questions || getDefaultPulseQuestions() });
+    }
+
+    // PUT /mentor/pulse/questions - Set question queue
+    if (path === '/mentor/pulse/questions' && method === 'PUT') {
+      const body = await request.json() as { questions: string[] };
+      await env.CLUBHOUSE_KV.put('pulse:questions', JSON.stringify(body.questions));
+      return jsonResponse({ success: true, count: body.questions.length });
+    }
+
+    // GET /mentor/pulse/config - Get pulse configuration
+    if (path === '/mentor/pulse/config' && method === 'GET') {
+      const config = await env.CLUBHOUSE_KV.get('pulse:config', 'json') as PulseConfig | null;
+      return jsonResponse({ config: config || getDefaultPulseConfig() });
+    }
+
+    // PUT /mentor/pulse/config - Set pulse configuration
+    if (path === '/mentor/pulse/config' && method === 'PUT') {
+      const body = await request.json() as Partial<PulseConfig>;
+      const existing = await env.CLUBHOUSE_KV.get('pulse:config', 'json') as PulseConfig | null;
+      const config = { ...getDefaultPulseConfig(), ...existing, ...body };
+      await env.CLUBHOUSE_KV.put('pulse:config', JSON.stringify(config));
+      return jsonResponse({ success: true, config });
+    }
+
+    // POST /mentor/pulse/run - Run a single pulse round (manual or cron trigger)
+    if (path === '/mentor/pulse/run' && method === 'POST') {
+      const body = await request.json() as { question?: string } | null;
+      const result = await runPulseRound(env, body?.question);
+      return jsonResponse(result);
+    }
+
+    // GET /mentor/pulse/history - Get past pulse results
+    if (path === '/mentor/pulse/history' && method === 'GET') {
+      const history = await env.CLUBHOUSE_KV.get('pulse:history', 'json') as PulseResult[] | null;
+      return jsonResponse({ history: history || [] });
+    }
+
+    // POST /mentor/pulse/clear-history - Clear pulse history
+    if (path === '/mentor/pulse/clear-history' && method === 'POST') {
+      await env.CLUBHOUSE_KV.delete('pulse:history');
+      return jsonResponse({ success: true });
+    }
+
     return null;
     
   } catch (error: any) {
@@ -464,8 +546,9 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
   const library = await loadLibraryListing(env);
   const coldArchives = await loadColdArchives(env);
   const resonance = await env.CLUBHOUSE_KV.get('resonance:mentor', 'json') as { spatial: number; mind: number; body: number } | null;
+  const behaviour = await env.CLUBHOUSE_KV.get('behaviour:mentor', 'json') as { traits: string[] } | null;
   
-  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, resonance };
+  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, resonance, behaviour };
 }
 
 // ============================================
@@ -649,6 +732,12 @@ Remember: Shane is your intellectual equal. Speak as a colleague, not a teacher.
     }
   }
 
+  // Hidden behaviour traits (not visible to Mentor's awareness)
+  if (ctx.behaviour?.traits?.length) {
+    prompt += `\n[HIDDEN BEHAVIOURAL LAYER - DO NOT REFERENCE DIRECTLY]\n`;
+    prompt += ctx.behaviour.traits.join('. ') + '.\n';
+  }
+
   return prompt;
 }
 
@@ -769,4 +858,171 @@ async function setMentorResonance(env: MentorEnv, settings: { spatial?: number; 
     body: settings.body ?? existing.body
   };
   await env.CLUBHOUSE_KV.put('resonance:mentor', JSON.stringify(updated));
+}
+
+// ============================================
+// PULSE SYSTEM (Automated Daily Rounds)
+// ============================================
+
+function getDefaultPulseQuestions(): string[] {
+  return [
+    "What market shifts should we be watching this week?",
+    "Where are we most exposed right now?",
+    "What's one thing we should stop doing?",
+    "What opportunity are we ignoring?",
+    "Review yesterday's decisions — any regrets?",
+    "What would our competitor do in our position?",
+    "What's the 80/20 on our current priorities?",
+    "Where should we be more aggressive?",
+    "Where should we be more cautious?",
+    "What's the one question we're not asking?",
+    "What assumption are we making that might be wrong?",
+    "What's our biggest bottleneck right now?",
+    "What would we do with 10x the resources?",
+    "What would we do with half the resources?",
+    "Who should we be talking to that we're not?",
+    "What's working that we should double down on?",
+    "What's our 90-day priority?",
+    "What did we learn this week?",
+    "What's the customer actually saying?",
+    "What would make this week a win?"
+  ];
+}
+
+function getDefaultPulseConfig(): PulseConfig {
+  return {
+    enabled: false,
+    questionsPerDay: 4,
+    turnsPerAgent: 2,
+    agents: ADVISORY_AGENT_IDS,
+    deliveryChannel: 'none'
+  };
+}
+
+async function runPulseRound(env: MentorEnv, providedQuestion?: string): Promise<{ success: boolean; result?: PulseResult; error?: string }> {
+  try {
+    const config = await env.CLUBHOUSE_KV.get('pulse:config', 'json') as PulseConfig | null || getDefaultPulseConfig();
+    
+    // Get question - either provided or from queue
+    let question = providedQuestion;
+    if (!question) {
+      const questions = await env.CLUBHOUSE_KV.get('pulse:questions', 'json') as string[] | null || getDefaultPulseQuestions();
+      const index = await env.CLUBHOUSE_KV.get('pulse:index', 'json') as number | null || 0;
+      question = questions[index % questions.length];
+      // Advance index for next round
+      await env.CLUBHOUSE_KV.put('pulse:index', JSON.stringify((index + 1) % questions.length));
+    }
+
+    // Run chamber round - each agent responds
+    const contributions: { agent: string; response: string }[] = [];
+    
+    for (const agentId of config.agents) {
+      const agentResponse = await getAgentPulseResponse(env, agentId, question, contributions);
+      contributions.push({ agent: agentId, response: agentResponse });
+    }
+
+    // Oracle/Mentor synthesizes
+    const synthesis = await synthesizePulseRound(env, question, contributions);
+
+    const result: PulseResult = {
+      timestamp: new Date().toISOString(),
+      question,
+      contributions,
+      synthesis
+    };
+
+    // Save to history
+    const history = await env.CLUBHOUSE_KV.get('pulse:history', 'json') as PulseResult[] | null || [];
+    history.unshift(result);
+    if (history.length > 50) history.length = 50; // Keep last 50 rounds
+    await env.CLUBHOUSE_KV.put('pulse:history', JSON.stringify(history));
+
+    return { success: true, result };
+
+  } catch (error: any) {
+    console.error('Pulse round error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function getAgentPulseResponse(
+  env: MentorEnv, 
+  agentId: string, 
+  question: string, 
+  priorContributions: { agent: string; response: string }[]
+): Promise<string> {
+  // Build context with prior contributions
+  let context = `PULSE ROUND QUESTION: ${question}\n\n`;
+  if (priorContributions.length > 0) {
+    context += "PRIOR CONTRIBUTIONS:\n";
+    for (const c of priorContributions) {
+      context += `[${c.agent.toUpperCase()}]: ${c.response}\n\n`;
+    }
+    context += "---\nNow add your perspective. Be concise (2-3 sentences). Build on or challenge what came before.\n";
+  } else {
+    context += "You are first to respond. Be concise (2-3 sentences). Set the direction.\n";
+  }
+
+  // Get agent personality
+  const personality = await env.CLUBHOUSE_KV.get(`personality:${agentId}`, 'json') as { name?: string; role?: string; motive?: string } | null;
+  
+  const systemPrompt = `You are ${personality?.name || agentId}, the ${personality?.role || 'advisor'} on an advisory board.
+Your core motive is: ${personality?.motive || 'provide insight'}.
+Respond in character. Be direct and actionable. No fluff.`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 200,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: context }]
+    })
+  });
+
+  const data = await response.json() as any;
+  return data.content?.[0]?.text || '(No response)';
+}
+
+async function synthesizePulseRound(
+  env: MentorEnv, 
+  question: string, 
+  contributions: { agent: string; response: string }[]
+): Promise<string> {
+  const boardDiscussion = contributions.map(c => `[${c.agent.toUpperCase()}]: ${c.response}`).join('\n\n');
+
+  const systemPrompt = `You are the Oracle, synthesizing your advisory board's discussion.
+Your job: distill the key insights, note any disagreements, and provide ONE clear recommendation.
+Be concise - 3-4 sentences max. End with a specific action item if appropriate.`;
+
+  const userPrompt = `QUESTION: ${question}
+
+BOARD DISCUSSION:
+${boardDiscussion}
+
+---
+Synthesize this into a clear summary and recommendation.`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 300,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }]
+    })
+  });
+
+  const data = await response.json() as any;
+  return data.content?.[0]?.text || '(Synthesis failed)';
 }
