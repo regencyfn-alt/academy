@@ -5727,7 +5727,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             if (result.done) return;
             
             var chunk = decoder.decode(result.value, { stream: true });
-            var lines = chunk.split('\n');
+            var lines = chunk.split('\\n');
             
             lines.forEach(function(line) {
               if (line.startsWith('data: ')) {
