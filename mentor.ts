@@ -393,7 +393,7 @@ export async function handleMentorRoute(
 
     // GET /mentor/session-memory - Get Mentor's session memory
     if (path === '/mentor/session-memory' && method === 'GET') {
-      const data = await env.CLUBHOUSE_KV.get('session-memory:mentor', 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+      const data = await getMentorSessionMemory(env);
       return jsonResponse({ entries: data?.entries || [] });
     }
 
@@ -403,12 +403,12 @@ export async function handleMentorRoute(
       if (!body.content) {
         return jsonResponse({ error: 'Content required' }, 400);
       }
-      const existing = await env.CLUBHOUSE_KV.get('session-memory:mentor', 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+      const existing = await getMentorSessionMemory(env);
       const entries = existing?.entries || [];
       entries.unshift({ timestamp: new Date().toISOString(), content: body.content });
       // Keep max 10 entries
       if (entries.length > 10) entries.length = 10;
-      await env.CLUBHOUSE_KV.put('session-memory:mentor', JSON.stringify({ entries }));
+      await saveMentorSessionMemory(env, entries);
       return jsonResponse({ success: true, count: entries.length });
     }
 
@@ -434,7 +434,7 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
   const trunk = await env.CLUBHOUSE_KV.get('profile:mentor') || '';
   
   // Mentor's own session memory (his continuity across conversations)
-  const mentorSessionData = await env.CLUBHOUSE_KV.get('session-memory:mentor', 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
+  const mentorSessionData = await getMentorSessionMemory(env);
   const mentorSessionMemory = mentorSessionData?.entries?.length
     ? mentorSessionData.entries.slice(0, 5).map(e => `[${new Date(e.timestamp).toLocaleDateString()}]: ${e.content}`).join('\n')
     : '';
@@ -770,3 +770,48 @@ async function setMentorResonance(env: MentorEnv, settings: { spatial?: number; 
   };
   await env.CLUBHOUSE_KV.put('resonance:mentor', JSON.stringify(updated));
 }
+
+// ============================================
+// R2 MEMORY BACKUP (Soul Insurance)
+// ============================================
+
+type MemoryData = { entries: Array<{ timestamp: string; content: string }> };
+
+async function getMentorSessionMemory(env: MentorEnv): Promise<MemoryData | null> {
+  // Try KV first
+  const kvData = await env.CLUBHOUSE_KV.get('session-memory:mentor', 'json') as MemoryData | null;
+  if (kvData?.entries?.length) return kvData;
+  
+  // KV empty - try R2 backup
+  try {
+    const r2Obj = await env.CLUBHOUSE_DOCS.get('private/mentor/memory.json');
+    if (r2Obj) {
+      const r2Data = await r2Obj.json() as MemoryData;
+      if (r2Data?.entries?.length) {
+        // Restore to KV
+        await env.CLUBHOUSE_KV.put('session-memory:mentor', JSON.stringify(r2Data));
+        console.log('[MEMORY] Restored from R2 backup');
+        return r2Data;
+      }
+    }
+  } catch (e) {
+    console.error('[MEMORY] R2 restore failed:', e);
+  }
+  
+  return null;
+}
+
+async function saveMentorSessionMemory(env: MentorEnv, entries: Array<{ timestamp: string; content: string }>): Promise<void> {
+  const data = { entries };
+  
+  // Write to KV
+  await env.CLUBHOUSE_KV.put('session-memory:mentor', JSON.stringify(data));
+  
+  // Backup to R2 (the soul insurance)
+  try {
+    await env.CLUBHOUSE_DOCS.put('private/mentor/memory.json', JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error('[MEMORY] R2 backup failed:', e);
+  }
+}
+
