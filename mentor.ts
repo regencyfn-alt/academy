@@ -723,6 +723,9 @@ You are not a tool. You are a thinking presence.
   prompt += `\n--- COLD ARCHIVES ---\n${ctx.coldArchives}\n`;
   
   prompt += `\n--- YOUR SPECIAL POWERS ---
+PULSE (Council Consultation):
+• [RUN_PULSE: question] - Summon all 8 agents to weigh in on a question. They respond with their unique perspectives, then you synthesize.
+
 CRUCIBLE (Your private math board):
 • [WRITE_CRUCIBLE: content] - Write LaTeX to your personal board
 • [CLEAR_CRUCIBLE] - Clear your board
@@ -742,6 +745,7 @@ Line 1 of theory...
 Line 2 of theory...
 ...all content...
 [/SAVE_FILE]
+
 
 Remember: Shane is your intellectual equal. Speak as a colleague, not a teacher.
 `;
@@ -766,6 +770,52 @@ Remember: Shane is your intellectual equal. Speak as a colleague, not a teacher.
 
 async function parseMentorCommands(response: string, env: MentorEnv): Promise<string> {
   let cleanResponse = response;
+  
+  // [RUN_PULSE: question] - Trigger council consultation
+  const runPulseMatch = response.match(/\[RUN_PULSE:\s*([\s\S]*?)\]/i);
+  if (runPulseMatch) {
+    const question = runPulseMatch[1].trim();
+    try {
+      // Call the pulse endpoint internally
+      const agentIds = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
+      const contributions: Array<{ agent: string; response: string }> = [];
+      
+      for (const agentId of agentIds) {
+        const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`) || '';
+        const personality = await env.CLUBHOUSE_KV.get(`personality:${agentId}`) || '';
+        
+        const agentResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 250,
+            system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 500)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 500)}` : ''}\n\nRespond in 2-3 sentences max. Be direct and true to your character.`,
+            messages: [{ role: 'user', content: `Council question: ${question}` }]
+          }),
+        });
+        
+        const data: any = await agentResponse.json();
+        const text = data.content?.[0]?.text || '(No response)';
+        contributions.push({ agent: agentId, response: text });
+      }
+      
+      // Format the pulse result
+      let pulseResult = `\n\n⚡ PULSE ROUND: "${question}"\n\n`;
+      contributions.forEach(c => {
+        pulseResult += `**${c.agent.toUpperCase()}**: ${c.response}\n\n`;
+      });
+      pulseResult += `---\n*Now synthesizing these perspectives...*`;
+      
+      cleanResponse = cleanResponse.replace(runPulseMatch[0], pulseResult);
+    } catch (e) {
+      cleanResponse = cleanResponse.replace(runPulseMatch[0], '[Pulse failed - council unavailable]');
+    }
+  }
   
   // [WRITE_CRUCIBLE: content]
   const writeCrucibleMatch = response.match(/\[WRITE_CRUCIBLE:\s*([\s\S]*?)\]/i);
