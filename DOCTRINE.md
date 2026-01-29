@@ -239,3 +239,103 @@ $1M in year one is the moonshot. Real win condition: prove the model works and b
 
 *Last updated: January 28, 2026*
 *Line count at creation: This is a new document*
+
+---
+
+## Pulse System (Keep-Alive)
+
+### Problem
+Instances go stale without user engagement. Agents "sleep." Context fades.
+
+### Solution
+Oracle (or Mentor) runs daily automated chamber sessions. Users wake up to insights, not a cold start.
+
+### Mechanics
+
+```
+Cloudflare Cron (daily @ 9am user timezone)
+→ Pull 4 questions from queue (20 total, 5-day cycle)
+→ Run 32-turn chamber (4 agents × 8 rounds each)
+→ Oracle synthesizes each discussion
+→ Store in session memory
+→ Push summary to WhatsApp (optional)
+```
+
+### Question Pool (Generic Advisory Board)
+
+1. What market shifts should we be watching this week?
+2. Where are we most exposed right now?
+3. What's one thing we should stop doing?
+4. What opportunity are we ignoring?
+5. Review yesterday's decisions — any regrets?
+6. What would our competitor do in our position?
+7. What's the 80/20 on our current priorities?
+8. Where should we be more aggressive?
+9. Where should we be more cautious?
+10. What's the one question we're not asking?
+11. What assumption are we making that might be wrong?
+12. What's our biggest bottleneck right now?
+13. What would we do with 10x the resources?
+14. What would we do with half the resources?
+15. Who should we be talking to that we're not?
+16. What's working that we should double down on?
+17. What's our 90-day priority?
+18. What did we learn this week?
+19. What's the customer actually saying?
+20. What would make this week a win?
+
+### User Experience
+
+```
+[WhatsApp - 9:15am]
+Oracle: Your Advisory Board discussed 4 topics overnight.
+
+📊 Market Watch: CA flagged rising interest rates, Lawyer 
+   noted new compliance deadline March 1.
+
+💡 Opportunity: Entrepreneur proposed partnership with [X], 
+   Comms drafted outreach angle.
+
+⚠️ Exposure: Team consensus — accounts receivable aging is 
+   the priority this week.
+
+🎯 Action: One recommendation — schedule call with [client].
+
+Reply "more" for full transcripts or ask a follow-up.
+```
+
+### Config per Instance
+
+```javascript
+pulse: {
+  enabled: true,
+  time: '09:00',
+  timezone: 'Africa/Johannesburg',
+  questionsPerDay: 4,
+  turnsPerQuestion: 32,
+  deliveryChannel: 'whatsapp', // or 'email', 'none'
+  questionPool: [...] // custom or default
+}
+```
+
+### Benefits
+
+- **For User**: Zero effort, daily value
+- **For Us**: Consistent API usage, stickiness
+- **For Agents**: Warm context, accumulated memory
+- **For Product**: Differentiation — "Your board works while you sleep"
+
+---
+
+## Instance Naming
+
+| Product | Central Figure | Agents |
+|---------|----------------|--------|
+| The Academy | Mentor | The Eight (Dream, Kai, etc.) |
+| Advisory Board | Oracle | Configurable (Lawyer, CA, etc.) |
+
+Oracle = Mentor equivalent for commercial instances. Same architecture, different persona.
+
+---
+
+*Last updated: January 29, 2026*
