@@ -1706,7 +1706,7 @@ async function getCurriculum(agentId: string, env: Env): Promise<string[]> {
     for (const obj of list.objects) {
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
-        contents.push((await doc.text()).slice(0, 200000));
+        contents.push((await doc.text()).slice(0, 10000)); // 10k per curriculum doc
       }
     }
     return contents;
@@ -1727,13 +1727,13 @@ async function getPrivateUploads(agentId: string, env: Env): Promise<{ name: str
       return bTime - aTime; // Descending (newest first)
     });
     
-    // Take top 5 most recent
+    // Take top 3 most recent
     const uploads: { name: string; content: string }[] = [];
-    for (const obj of sorted.slice(0, 5)) {
+    for (const obj of sorted.slice(0, 3)) {
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
         const name = obj.key.replace(`private/${agentId}/uploads/`, '');
-        uploads.push({ name, content: (await doc.text()).slice(0, 200000) });
+        uploads.push({ name, content: (await doc.text()).slice(0, 10000) }); // 10k per upload
       }
     }
     return uploads;
@@ -4052,13 +4052,13 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     // Ignore visibility result errors
   }
   
-  // HARD CAP: Prevent token overflow (200k tokens ≈ 800k chars, cap at 500k for safety)
-  const MAX_PROMPT_CHARS = 500000;
+  // HARD CAP: Prevent token overflow (100k chars ≈ 25k tokens - reasonable for Sonnet)
+  const MAX_PROMPT_CHARS = 100000;
   if (prompt.length > MAX_PROMPT_CHARS) {
     console.log(`WARNING: ${agent.id} prompt truncated from ${prompt.length} to ${MAX_PROMPT_CHARS} chars`);
     // Keep beginning (identity, rules) and end (recent context), cut middle
-    const keepStart = 100000; // First 100k chars (core identity)
-    const keepEnd = 100000;   // Last 100k chars (recent context)
+    const keepStart = 40000; // First 40k chars (core identity)
+    const keepEnd = 40000;   // Last 40k chars (recent context)
     prompt = prompt.slice(0, keepStart) + 
       '\n\n[... content trimmed for token limit ...]\n\n' + 
       prompt.slice(-keepEnd);
