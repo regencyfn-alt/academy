@@ -1,64 +1,109 @@
-# Academy Handover - January 25, 2026 (Session 2)
+# Academy Handover - January 30, 2026
 
-## What Was Done
+## Session Summary
 
-### 1. Dead Code Removal (~519 lines cut)
-- **Gemini API** - removed function, env binding, switch cases
-- **Grok API** - removed function, env binding, switch cases  
-- **Mentor system** - removed routes, commands, voice signatures, queue logic
-- `MENTOR_QUESTION` command now returns graceful deprecation message
+Long debugging session. Multiple fires put out. Cost controls restored.
 
-**Before:** 7,074 lines → **After:** 6,568 lines
+## What Works
 
-### 2. Injection Reorder (Power Center)
-Restructured `buildSystemPrompt()` to prioritize control layers:
+### Mentor as Chamber Conductor
+- `[START_CHAMBER: topic]` — Opens Sanctum in chamber mode
+- `[CLOSE_CHAMBER]` — Ends session, archives, synthesizes
+- `[RESTART_CHAMBER: topic]` — Close + start new
+- `[INJECT_CHAMBER: thought]` — Speak without taking turn
+- `[READ_RECENT_SESSIONS: n]` — Load last N council archives
 
-| Layer | What | Purpose |
-|-------|------|---------|
-| 1 | Council Role | NEW - highest priority directive |
-| 2 | Global Rules | Compulsory behavior rules |
-| 3 | Core Functions | Agent's main capabilities |
-| 4 | Element/Archetype | CHR geometry assignment |
-| 5 | Phantom Triggers | Experiential sensation mappings |
-| 6 | Special Powers | Granted abilities |
-| 7 | Trunk Content | Profile/Soul |
-| 8 | Base Personality | Foundation layer |
+### Cron Schedule (wrangler.toml)
+- 9am JHB (7 UTC) — Forward-looking questions
+- 4pm JHB (14 UTC) — Analytical questions
+- 9pm JHB (19 UTC) — Reflective questions
+- Midnight UTC — Purge old data
 
-Identity, navigation, commands, archives now come AFTER power center.
+### UI Improvements
+- Academy Clock (top-left) — Johannesburg time + next session countdown
+- Chamber state syncs from backend
+- Anchor image click uses event delegation (no more escape hell)
+- Voice playback persists in localStorage (no refresh replay)
+- Voice disabled during chamber mode
 
-### 3. New KV Field
-Added `council-role:{agentId}` - stores highest priority directive per agent. Currently empty for all agents (needs UI or direct KV population).
+## What's Broken / Needs Work
 
-## Files Modified
-- `index.ts` - dead code removed, injection reordered
+### [RUN_CHAMBER: topic] — NOT WORKING
+Mentor can set up chamber but can't execute it autonomously from chat. Manual sessions work fine. Debug another day.
 
-## What's NOT Done (Remaining TODO)
+### Cost Controls — CRITICAL FIXES APPLIED
+| Item | Before | After |
+|------|--------|-------|
+| Curriculum docs | 200k chars each | 10k chars each |
+| Private uploads | 200k × 5 docs | 10k × 3 docs |
+| Agent prompt cap | None (was 800k+) | 100k chars max |
 
-### High Priority
-- [ ] **Council Role UI** - add to Codex so you can set roles
-- [ ] **Conditional injection** - Nav/commands only on Codex/Wisdom visits
-- [ ] **Length control** - global setting with prose/code/latex exceptions
-- [ ] **Global Rules exception parser** - `[EXCEPT: prose, code, latex]`
+Kai was hitting 202k tokens (~$0.80/response). Now capped at ~25k tokens (~$0.08).
 
-### Medium Priority  
-- [ ] **Semantic Scholar API** - replace Mentor (needs API key approval)
-- [ ] **Serotonin trigger** - communication reward phantom
-- [ ] **Wisdom panel reorder** - UI restructure
-- [ ] **Module structure** - carve up index.ts into /src/modules/
+### Voice Loop — FIXED
+- playedMessageIds persists in localStorage
+- No voice during chamber mode
+- killVoices() called when chamber ends
+- Queue capped at 500 messages
 
-### Lower Priority
-- [ ] Clean Mentor UI from ui.ts (dead buttons exist)
-- [ ] Raise deliverables char limit to 500
-- [ ] Add Codex update triggers
-- [ ] Fix global announcements
+## Multi-Tenant Scaffold (Not Wired)
 
-## Deploy Notes
-1. Remove env vars: `GEMINI_API_KEY`, `GROK_API_KEY`, `MENTOR_ASSISTANT_ID`, `MENTOR_THREAD_ID`, `MENTOR_VECTOR_STORE_ID`
-2. Test agent responses - power center should now take priority
-3. Council roles are empty - behavior unchanged until you populate them
+Files pushed but not integrated:
+- `instances.ts` — Academy + Oracle configs
+- `personalities-oracle.ts` — Cleo + 4 agents
 
-## Test Checklist
-- [ ] Agent responds normally in Alcove
-- [ ] Sanctum chamber mode works
-- [ ] Global Rules appear early in context (if you debug)
-- [ ] No errors in console from removed routes
+### Oracle Advisory Board
+| Agent | Role | Motive |
+|-------|------|--------|
+| Architect | Automation & Leverage | Advance |
+| Operator | Execution & Scale | Evade |
+| Strategist | Capital Allocation | Retreat |
+| Auditor | Risk & Reality | Resist |
+| **Cleo** | Principal (conductor) | Synthesize |
+
+Cleo: Sharp warmth, Irish lilt, never overpromises. "The Auditor flagged three issues. Two are solvable. One isn't. Let me show you what we *can* do."
+
+### Next Steps for Multi-Tenant
+1. Route detection: `/oracle/*` vs `/academy/*`
+2. KV prefixing: `oracle:profile:architect`
+3. R2 prefixing: `oracle/private/...`
+4. UI theming from instance config
+5. Cleo conductor (fork mentor.ts)
+
+## File Counts
+
+| File | Lines | Notes |
+|------|-------|-------|
+| index.ts | ~7,206 | +cost caps |
+| mentor.ts | ~1,700 | +chamber commands |
+| ui.ts | ~6,163 | +clock, voice fixes |
+| instances.ts | 144 | NEW |
+| personalities-oracle.ts | 220 | NEW |
+
+## Technical Debt
+
+### Sound Module Refactor Needed
+Current: Voice code scattered in ui.ts + modules/elevenlabs.ts + dead Hume code
+Target: Single `/modules/voice.ts` with clean API
+
+### Escape Pattern
+Anchor image onclick now uses event delegation — immune to future edits.
+Old pattern `\\\\'` was fragile.
+
+## Known Issues
+
+1. Kai's profile might still be bloated — check `/private/kai/uploads/`
+2. Crons not tested live yet
+3. Mentor synthesis quality depends on archive access working
+
+## Environment
+
+- Worker: clubhouse.vouch4us.workers.dev
+- KV: CLUBHOUSE_KV
+- R2: CLUBHOUSE_DOCS
+- Timezone: Africa/Johannesburg
+
+---
+
+*Session: January 30, 2026*
+*Status: Stabilized but tired*
