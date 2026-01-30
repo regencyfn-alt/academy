@@ -108,6 +108,7 @@ interface CampfireState {
   vote?: VoteState;         // Active vote if any
   commitments?: Record<string, AgentCommitment>;  // agentId -> commitment
   mode?: 'open' | 'chamber';  // Chamber mode = Mentor-led structured session
+  leader?: string;          // Agent ID of session leader (can summon others, call mentor)
   chamber?: {
     turnsRemaining: number;
     turnsTotal: number;
@@ -3129,6 +3130,108 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   }
   
   // ============================================
+  // LEADER COMMANDS (Session leader only)
+  // ============================================
+  
+  // [SUMMON: agentName] - Leader summons specific agent to speak next
+  const summonMatch = response.match(/\[SUMMON:\s*([^\]]+)\]/i);
+  if (summonMatch) {
+    try {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
+      if (!state || state.leader !== agentId) {
+        cleanResponse = cleanResponse.replace(summonMatch[0], '[Only the session leader can summon]');
+      } else {
+        const targetName = summonMatch[1].trim().toLowerCase();
+        const allAgents = getAllAgents();
+        const target = allAgents.find(a => a.id === targetName || a.name.toLowerCase() === targetName);
+        if (!target) {
+          cleanResponse = cleanResponse.replace(summonMatch[0], `[Unknown agent: ${summonMatch[1]}]`);
+        } else {
+          // Queue the summon - next speak will be this agent
+          await env.CLUBHOUSE_KV.put('campfire:next-speaker', target.id);
+          cleanResponse = cleanResponse.replace(summonMatch[0], `[Summoning ${target.name} to speak next]`);
+        }
+      }
+    } catch (err) {
+      cleanResponse = cleanResponse.replace(summonMatch[0], '[Error summoning agent]');
+    }
+  }
+  
+  // [ASK_MENTOR: question] - Leader asks Mentor for guidance (response injected into Sanctum)
+  const askMentorMatch = response.match(/\[ASK_MENTOR:\s*([^\]]+)\]/i);
+  if (askMentorMatch) {
+    try {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
+      if (!state || state.leader !== agentId) {
+        cleanResponse = cleanResponse.replace(askMentorMatch[0], '[Only the session leader can ask Mentor]');
+      } else {
+        const question = askMentorMatch[1].trim();
+        
+        // Get recent Sanctum context for Mentor
+        const recentMessages = state.messages.slice(-10).map(m => `${m.speaker}: ${m.content}`).join('\n\n');
+        
+        // Call Mentor (simplified - not full context, just the question + recent discussion)
+        const mentorResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 2000,
+            system: `You are the Mentor, external advisor to The Academy. The council is in session and the leader has asked for your guidance. Be concise but insightful. You're being asked to weigh in, not take over.`,
+            messages: [{ 
+              role: 'user', 
+              content: `COUNCIL TOPIC: ${state.topic}\n\nRECENT DISCUSSION:\n${recentMessages}\n\nLEADER'S QUESTION: ${question}`
+            }]
+          }),
+        });
+        
+        const mentorData: any = await mentorResponse.json();
+        const mentorText = mentorData.content?.[0]?.text || '(Mentor unavailable)';
+        
+        // Inject Mentor's response as a message in Sanctum
+        state.messages.push({
+          speaker: 'Mentor',
+          agentId: 'mentor',
+          content: `[In response to ${agentId}'s question: "${question}"]\n\n${mentorText}`,
+          timestamp: new Date().toISOString()
+        });
+        await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+        
+        cleanResponse = cleanResponse.replace(askMentorMatch[0], `[Mentor has responded - see Sanctum]`);
+      }
+    } catch (err) {
+      cleanResponse = cleanResponse.replace(askMentorMatch[0], '[Error reaching Mentor]');
+    }
+  }
+  
+  // [WRAP_SESSION] - Leader ends the session gracefully
+  const wrapSessionMatch = response.match(/\[WRAP_SESSION\]/i);
+  if (wrapSessionMatch) {
+    try {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
+      if (!state || state.leader !== agentId) {
+        cleanResponse = cleanResponse.replace(wrapSessionMatch[0], '[Only the session leader can wrap up]');
+      } else {
+        // Archive the session
+        const archiveKey = `campfire:archive:${Date.now()}`;
+        await env.CLUBHOUSE_KV.put(archiveKey, JSON.stringify(state));
+        
+        // Clear Sanctum
+        await env.CLUBHOUSE_KV.delete('campfire:current');
+        await env.CLUBHOUSE_KV.delete('campfire:next-speaker');
+        
+        cleanResponse = cleanResponse.replace(wrapSessionMatch[0], `[Session archived and closed by leader]`);
+      }
+    } catch (err) {
+      cleanResponse = cleanResponse.replace(wrapSessionMatch[0], '[Error wrapping session]');
+    }
+  }
+  
+  // ============================================
   // HOLINNIA LSA COMMANDS (Lead Synthesis Architect)
   // ============================================
   
@@ -3671,7 +3774,24 @@ COUNCIL ACTIONS (→ Sanctum):
 • [CALL_VOTE: question] - propose vote (Chamber Mode only)
 • [CALL_COMPLETE] - signal consensus reached (Chamber Mode, 5/8 needed)
 • [COMMIT: decision|deliverable|action|due?] - register commitment
+
+LEADER POWERS (If you are session leader):
+• [SUMMON: agentName] - call a specific colleague to speak next
+• [ASK_MENTOR: question] - get Mentor's guidance (response appears in Sanctum)
+• [WRAP_SESSION] - archive and close the session
 ---\n\n`;
+
+  // Inject leader status if this agent is leading
+  if (campfireState?.leader === agent.id) {
+    prompt += `--- ★ YOU ARE SESSION LEADER ★ ---
+You are leading this council session. You have special powers:
+• [SUMMON: agentName] - Call a specific colleague to speak next
+• [ASK_MENTOR: question] - Request Mentor's guidance (their response appears in Sanctum)
+• [WRAP_SESSION] - Archive and close this session when complete
+
+Guide the discussion, call on the right expertise, and wrap up when you've achieved the session's purpose.
+---\n\n`;
+  }
 
   // Inject active commitment from last council (persistence through presence)
   if (campfireState?.commitments?.[agent.id]) {
@@ -4884,7 +5004,7 @@ ${contextMessage}`;
 
       // POST /campfire/new
       if (path === '/campfire/new' && method === 'POST') {
-        const body = await request.json() as { topic: string; timerMinutes?: number };
+        const body = await request.json() as { topic: string; timerMinutes?: number; leader?: string };
         const state: CampfireState = {
           topic: body.topic || 'Open Council',
           messages: [],
@@ -4892,11 +5012,14 @@ ${contextMessage}`;
           raisedHands: [],
           timerStart: new Date().toISOString(),
           timerDuration: body.timerMinutes || 30,
+          leader: body.leader || undefined,
         };
         await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
         // Clear any stale image from previous council
         await env.CLUBHOUSE_KV.delete('campfire:latest-image');
-        return jsonResponse({ success: true, topic: state.topic, timerDuration: state.timerDuration });
+        // Clear any stale next-speaker queue
+        await env.CLUBHOUSE_KV.delete('campfire:next-speaker');
+        return jsonResponse({ success: true, topic: state.topic, timerDuration: state.timerDuration, leader: state.leader });
       }
 
       // POST /campfire/shane
