@@ -3056,8 +3056,8 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         var msgId = m.timestamp + ':' + m.agentId;
         if (!playedMessageIds[msgId]) {
           markMessagePlayed(msgId);
-          // Only play voice if initial load is complete and not in chamber mode
-          if (initialLoadComplete && m.content && soundEnabled && !chamberMode) {
+          // Only play voice if initial load is complete
+          if (initialLoadComplete && m.content && soundEnabled) {
             queueVoice(m.content, m.agentId);
           }
         }
@@ -3134,8 +3134,6 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     
     function queueVoice(text, agentId) {
       if (!soundEnabled || !text) return;
-      // Don't queue voice during chamber mode (backend-controlled)
-      if (chamberMode) return;
       voiceQueue.push({ text: text, agentId: agentId });
       processVoiceQueue();
     }
@@ -4999,7 +4997,6 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       chamberMode = false;
       chamberRunning = false;
       arenaMode = false;
-      killVoices(); // Clear any queued voices from chamber session
       var modeLabel = activeMode === 'arena' ? 'Arena' : 'Chamber';
       document.getElementById('chamber-status').textContent = 'Mode: ' + modeLabel;
       document.getElementById('chamber-status').classList.remove('active');
