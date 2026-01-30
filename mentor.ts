@@ -1065,7 +1065,7 @@ async function loadAllCrucibleBoards(env: MentorEnv): Promise<string> {
 
 async function loadSanctumState(env: MentorEnv): Promise<string> {
   try {
-    const state = await env.CLUBHOUSE_KV.get('campfire:state', 'json') as {
+    const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as {
       topic?: string;
       messages?: Array<{ speaker: string; content: string; timestamp: string }>;
       mode?: string;
@@ -1162,7 +1162,8 @@ CRUCIBLE (Your private math board):
 STORAGE:
 • [SAVE_TO_TRUNK: content] - Append to your soul/trunk (quick notes, max 500k total)
 • [SAVE_FILE: filename]content here[/SAVE_FILE] - Save named file to your uploads (for theory chunks)
-• [FETCH_ARCHIVE: key] - Retrieve full archive content
+• [FETCH_ARCHIVE: key] - Retrieve full archive content (100k max)
+• [READ_RECENT_SESSIONS: n] - Load last N council sessions for synthesis (max 10, 150k total)
 
 SANCTUM:
 • [INJECT_THOUGHT: content] - Post to agent board (visible to all)
@@ -1322,13 +1323,45 @@ async function parseMentorCommands(response: string, env: MentorEnv): Promise<st
       
       if (archive) {
         const content = await archive.text();
-        await env.CLUBHOUSE_KV.put('mentor-pending-archive', content.slice(0, 5000));
+        await env.CLUBHOUSE_KV.put('mentor-pending-archive', content.slice(0, 100000)); // 100k for synthesis
         cleanResponse = cleanResponse.replace(fetchArchiveMatch[0], `[Archive "${key}" queued]`);
       } else {
         cleanResponse = cleanResponse.replace(fetchArchiveMatch[0], `[Archive "${key}" not found]`);
       }
     } catch {
       cleanResponse = cleanResponse.replace(fetchArchiveMatch[0], `[Error fetching archive]`);
+    }
+  }
+  
+  // [READ_RECENT_SESSIONS: n] - Load last N council sessions for synthesis
+  const readSessionsMatch = response.match(/\[READ_RECENT_SESSIONS:\s*(\d+)\]/i);
+  if (readSessionsMatch) {
+    const count = Math.min(parseInt(readSessionsMatch[1]) || 3, 10); // Max 10
+    try {
+      const archiveList = await env.CLUBHOUSE_KV.list({ prefix: 'campfire:archive:' });
+      const sortedKeys = archiveList.keys.map(k => k.name).sort().reverse().slice(0, count);
+      
+      let sessionsContent = '';
+      for (const key of sortedKeys) {
+        const archive = await env.CLUBHOUSE_KV.get(key, 'json') as any;
+        if (archive) {
+          const date = new Date(parseInt(key.replace('campfire:archive:', ''))).toLocaleDateString();
+          sessionsContent += `\n=== SESSION: ${archive.topic || 'Untitled'} (${date}) ===\n`;
+          const messages = archive.messages || [];
+          messages.forEach((m: any) => {
+            sessionsContent += `${m.speaker}: ${m.content}\n\n`;
+          });
+        }
+      }
+      
+      if (sessionsContent) {
+        await env.CLUBHOUSE_KV.put('mentor-pending-archive', sessionsContent.slice(0, 150000)); // 150k for multiple sessions
+        cleanResponse = cleanResponse.replace(readSessionsMatch[0], `[✓ ${sortedKeys.length} recent sessions queued]`);
+      } else {
+        cleanResponse = cleanResponse.replace(readSessionsMatch[0], `[No archived sessions found]`);
+      }
+    } catch {
+      cleanResponse = cleanResponse.replace(readSessionsMatch[0], `[Error loading sessions]`);
     }
   }
   
