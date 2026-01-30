@@ -680,7 +680,7 @@ export const UI_HTML = `<!DOCTYPE html>
   <div class="main-wrapper">
     <div class="main-content-area" id="main-content">
     <div id="sanctum" class="panel active">
-      <div class="topic-bar"><span class="topic" id="sanctum-topic">The Council Awaits</span><span id="council-timer" style="font-size: 0.9em; color: var(--gold); margin-left: 15px; font-variant-numeric: tabular-nums;"></span><div class="topic-actions"><button id="record-session-btn" class="btn btn-secondary" onclick="startRecordingSession()">⏺ Record</button><button class="btn btn-secondary" onclick="archiveSanctum()">Preserve</button><button class="btn btn-primary" onclick="showConveneModal()">Convene</button></div></div>
+      <div class="topic-bar"><span class="topic" id="sanctum-topic">The Council Awaits</span><span id="session-leader" style="font-size: 0.85em; color: var(--silver); margin-left: 12px; display: none;"></span><span id="council-timer" style="font-size: 0.9em; color: var(--gold); margin-left: 15px; font-variant-numeric: tabular-nums;"></span><div class="topic-actions"><button id="record-session-btn" class="btn btn-secondary" onclick="startRecordingSession()">⏺ Record</button><button class="btn btn-secondary" onclick="archiveSanctum()">Preserve</button><button class="btn btn-primary" onclick="showConveneModal()">Convene</button></div></div>
       <div id="sanctum-status"></div>
       <div class="conversation" id="sanctum-messages"><div class="empty"><div class="rune">ᚦ</div><p>The threshold awaits.<br>Convene to begin.</p></div></div>
       <div class="input-area">
@@ -1424,7 +1424,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
   </div><!-- end main-wrapper -->
   
 
-  <div class="modal" id="convene-modal"><div class="modal-content"><h2>Convene the Council</h2><input type="text" id="convene-topic" placeholder="Topic of discourse..."><div class="modal-buttons"><button class="btn btn-secondary" onclick="hideConveneModal()">Withdraw</button><button class="btn btn-primary" onclick="createSanctum()">Convene</button></div></div></div>
+  <div class="modal" id="convene-modal"><div class="modal-content"><h2>Convene the Council</h2><input type="text" id="convene-topic" placeholder="Topic of discourse..."><div style="margin: 15px 0;"><label style="color: var(--silver); font-size: 0.85em;">Session Leader (optional):</label><select id="convene-leader" style="width: 100%; padding: 8px; margin-top: 5px; background: var(--void); color: var(--text); border: 1px solid var(--gold); border-radius: 4px;"><option value="">No leader (open session)</option></select></div><div class="modal-buttons"><button class="btn btn-secondary" onclick="hideConveneModal()">Withdraw</button><button class="btn btn-primary" onclick="createSanctum()">Convene</button></div></div></div>
   <div class="image-modal" id="image-modal" onclick="closeImageModal()"><img id="modal-image" src=""></div>
   
   <!-- Temporal Resonance Widget -->
@@ -2654,7 +2654,21 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           } else { 
             document.getElementById('sanctum-topic').textContent = 'The Council Awaits'; 
             document.getElementById('sanctum-messages').innerHTML = '<div class="empty"><div class="rune">ᚦ</div><p>The threshold awaits.<br>Convene to begin.</p></div>'; 
-          } 
+          }
+          
+          // Show leader if set
+          var leaderEl = document.getElementById('session-leader');
+          if (leaderEl) {
+            if (data.leader) {
+              var leaderAgent = agents.find(function(a) { return a.id === data.leader; });
+              var leaderName = leaderAgent ? (leaderAgent.customName || leaderAgent.name) : data.leader;
+              leaderEl.innerHTML = '★ <span style="color: var(--gold);">' + leaderName + '</span> leading';
+              leaderEl.style.display = 'inline';
+            } else {
+              leaderEl.style.display = 'none';
+            }
+          }
+          
           updateRaisedHands(data.raisedHands || []); 
           startCouncilTimer(data.timerStart, data.timerDuration);
           updateVoteUI(data.vote);
@@ -3070,9 +3084,16 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     }
     function updateRaisedHands(hands) { document.querySelectorAll('.agent-btn').forEach(function(btn) { btn.classList.remove('raised'); }); hands.forEach(function(id) { var btn = document.querySelector('.agent-btn.' + id); if (btn) btn.classList.add('raised'); }); }
     function checkHands() { var btn = document.querySelector('.check-hands-btn'); btn.innerHTML = 'Checking...<span class="loading"></span>'; btn.disabled = true; fetch(API + '/campfire/check-hands', { method: 'POST', credentials: 'same-origin' }).then(function(res) { return res.json(); }).then(function(data) { updateRaisedHands(data.raisedHands || []); showStatus('sanctum-status', (data.raisedHands || []).length > 0 ? (data.raisedHands.length + ' member(s) wish to speak') : 'No hands raised', 'success'); }).catch(function() { showStatus('sanctum-status', 'Failed to check hands', 'error'); }).finally(function() { btn.textContent = 'Check Hands'; btn.disabled = false; }); }
-    function showConveneModal() { document.getElementById('convene-modal').classList.add('active'); document.getElementById('convene-topic').focus(); }
+    function showConveneModal() { document.getElementById('convene-modal').classList.add('active'); document.getElementById('convene-topic').focus(); populateLeaderSelect(); }
     function hideConveneModal() { document.getElementById('convene-modal').classList.remove('active'); }
-    function createSanctum() { var topic = document.getElementById('convene-topic').value || 'Open Council'; fetch(API + '/campfire/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: topic }), credentials: 'same-origin' }).then(function() { hideConveneModal(); document.getElementById('convene-topic').value = ''; loadSanctum(); showStatus('sanctum-status', 'Council convened', 'success'); }).catch(function() { showStatus('sanctum-status', 'Failed to convene', 'error'); }); }
+    function populateLeaderSelect() {
+      var select = document.getElementById('convene-leader');
+      select.innerHTML = '<option value="">No leader (open session)</option>';
+      agents.forEach(function(a) {
+        select.innerHTML += '<option value="' + a.id + '">' + (a.customName || a.name) + '</option>';
+      });
+    }
+    function createSanctum() { var topic = document.getElementById('convene-topic').value || 'Open Council'; var leader = document.getElementById('convene-leader').value || null; fetch(API + '/campfire/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: topic, leader: leader }), credentials: 'same-origin' }).then(function() { hideConveneModal(); document.getElementById('convene-topic').value = ''; document.getElementById('convene-leader').value = ''; loadSanctum(); showStatus('sanctum-status', leader ? 'Council convened with ' + leader + ' leading' : 'Council convened', 'success'); }).catch(function() { showStatus('sanctum-status', 'Failed to convene', 'error'); }); }
     function shaneSpeaks() { 
       var input = document.getElementById('sanctum-input'); 
       var message = input.value.trim(); 
