@@ -4052,6 +4052,18 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     // Ignore visibility result errors
   }
   
+  // HARD CAP: Prevent token overflow (200k tokens ≈ 800k chars, cap at 500k for safety)
+  const MAX_PROMPT_CHARS = 500000;
+  if (prompt.length > MAX_PROMPT_CHARS) {
+    console.log(`WARNING: ${agent.id} prompt truncated from ${prompt.length} to ${MAX_PROMPT_CHARS} chars`);
+    // Keep beginning (identity, rules) and end (recent context), cut middle
+    const keepStart = 100000; // First 100k chars (core identity)
+    const keepEnd = 100000;   // Last 100k chars (recent context)
+    prompt = prompt.slice(0, keepStart) + 
+      '\n\n[... content trimmed for token limit ...]\n\n' + 
+      prompt.slice(-keepEnd);
+  }
+  
   return prompt;
 }
 
