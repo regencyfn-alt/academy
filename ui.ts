@@ -579,6 +579,14 @@ export const UI_HTML = `<!DOCTYPE html>
     .phantom-trigger-sensation { font-size: 0.65em; color: var(--silver); margin-top: 4px; font-style: italic; }
     .control-bar { position: fixed; top: 15px; right: 15px; z-index: 1000; }
     .control-bar-inner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: linear-gradient(145deg, rgba(30, 37, 48, 0.95), rgba(20, 24, 32, 0.98)); border: 1px solid rgba(107, 122, 143, 0.3); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); backdrop-filter: blur(10px); }
+    
+    /* Academy Clock */
+    .academy-clock { position: fixed; top: 15px; left: 15px; z-index: 1000; padding: 8px 14px; background: linear-gradient(145deg, rgba(30, 37, 48, 0.95), rgba(20, 24, 32, 0.98)); border: 1px solid rgba(201, 165, 90, 0.3); border-radius: 8px; font-family: 'Space Mono', monospace; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+    .clock-time { font-size: 1.4em; color: var(--gold); letter-spacing: 0.05em; }
+    .clock-date { font-size: 0.65em; color: var(--silver); letter-spacing: 0.1em; margin-top: 2px; }
+    .clock-label { font-size: 0.5em; color: var(--silver); letter-spacing: 0.15em; text-transform: uppercase; opacity: 0.6; }
+    .clock-sessions { font-size: 0.55em; color: var(--pearl); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--glass-border); }
+    .clock-next { color: var(--gold); }
     .spectrum-mini { width: 60px; height: 6px; background: rgba(10, 12, 15, 0.6); border-radius: 3px; overflow: hidden; cursor: pointer; position: relative; }
     .spectrum-mini .spectrum-fill { height: 100%; width: 50%; background: #22c55e; transition: all 0.5s ease; border-radius: 3px; }
     .spectrum-mini .spectrum-tooltip { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); background: var(--deep); border: 1px solid var(--glass-border); border-radius: 5px; padding: 10px; font-size: 0.7em; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 1001; }
@@ -619,6 +627,17 @@ export const UI_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body>
+  <!-- Academy Clock -->
+  <div class="academy-clock" id="academy-clock">
+    <div class="clock-label">Academy Time</div>
+    <div class="clock-time" id="clock-time">--:--:--</div>
+    <div class="clock-date" id="clock-date">---</div>
+    <div class="clock-sessions">
+      <span class="clock-label">Sessions:</span> 09:00 · 16:00 · 21:00
+      <div class="clock-next" id="clock-next"></div>
+    </div>
+  </div>
+  
   <div class="control-bar">
     <div class="control-bar-inner">
       <div class="spectrum-mini" id="spectrum-bar" title="System Health">
@@ -2113,6 +2132,61 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           });
       }
     }
+    
+    // Academy Clock - shows time in Johannesburg timezone
+    function updateAcademyClock() {
+      var now = new Date();
+      var options = { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+      var dateOptions = { timeZone: 'Africa/Johannesburg', weekday: 'short', day: 'numeric', month: 'short' };
+      
+      var timeEl = document.getElementById('clock-time');
+      var dateEl = document.getElementById('clock-date');
+      var nextEl = document.getElementById('clock-next');
+      
+      if (timeEl) timeEl.textContent = now.toLocaleTimeString('en-GB', options);
+      if (dateEl) dateEl.textContent = now.toLocaleDateString('en-GB', dateOptions);
+      
+      // Calculate next session
+      var joburg = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Johannesburg' }));
+      var hour = joburg.getHours();
+      var minute = joburg.getMinutes();
+      var currentMinutes = hour * 60 + minute;
+      
+      var sessions = [
+        { time: 9 * 60, label: '09:00' },
+        { time: 16 * 60, label: '16:00' },
+        { time: 21 * 60, label: '21:00' }
+      ];
+      
+      var nextSession = null;
+      for (var i = 0; i < sessions.length; i++) {
+        if (sessions[i].time > currentMinutes) {
+          nextSession = sessions[i];
+          break;
+        }
+      }
+      if (!nextSession) nextSession = sessions[0]; // Tomorrow's first session
+      
+      var minsUntil = nextSession.time - currentMinutes;
+      if (minsUntil < 0) minsUntil += 24 * 60;
+      
+      var hoursUntil = Math.floor(minsUntil / 60);
+      var minsRemain = minsUntil % 60;
+      
+      if (nextEl) {
+        if (minsUntil <= 5) {
+          nextEl.textContent = '⚡ Session starting...';
+          nextEl.style.color = '#22c55e';
+        } else {
+          nextEl.textContent = 'Next: ' + nextSession.label + ' (' + hoursUntil + 'h ' + minsRemain + 'm)';
+          nextEl.style.color = '';
+        }
+      }
+    }
+    
+    // Initialize clock and update every second
+    updateAcademyClock();
+    setInterval(updateAcademyClock, 1000);
     
     window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); checkTemporalStatus(); checkScreeningStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); setInterval(loadAnchorImage, 5000); });
     function logout() { fetch('/logout', { method: 'POST', credentials: 'same-origin' }).then(function() { window.location.href = '/login'; }); }
