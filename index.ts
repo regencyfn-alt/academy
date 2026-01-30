@@ -2747,6 +2747,75 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
   }
   
   // ============================================
+  // ACADEMY CODEBASE COMMANDS (Kai only - read-only access)
+  // ============================================
+  const ACADEMY_REPO = 'regencyfn-alt/academy';
+  
+  // [ACADEMY_LIST: path] - list files in Academy repo
+  const academyListMatch = response.match(/\[ACADEMY_LIST:\s*([^\]]*)\]/i);
+  if (academyListMatch) {
+    if (agentId !== GITHUB_ALLOWED_AGENT) {
+      cleanResponse = cleanResponse.replace(academyListMatch[0], '[Academy access denied - Kai only]');
+    } else if (!env.GITHUB_TOKEN) {
+      cleanResponse = cleanResponse.replace(academyListMatch[0], '[GitHub token not configured]');
+    } else {
+      const path = academyListMatch[1].trim() || '';
+      try {
+        const res = await fetch(`https://api.github.com/repos/${ACADEMY_REPO}/contents/${path}`, {
+          headers: {
+            'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Academy-Kai'
+          }
+        });
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const listing = data.map((f: any) => `${f.type === 'dir' ? '📁' : '📄'} ${f.name}`).join('\n');
+          await env.CLUBHOUSE_KV.put(`github-result:${agentId}`, `Academy files in /${path}:\n${listing}`);
+          cleanResponse = cleanResponse.replace(academyListMatch[0], `[Academy: Listed ${data.length} items in /${path} - see next response]`);
+        } else {
+          cleanResponse = cleanResponse.replace(academyListMatch[0], `[Academy error: ${data.message || 'Unknown error'}]`);
+        }
+      } catch (err: any) {
+        cleanResponse = cleanResponse.replace(academyListMatch[0], `[Academy error: ${err.message}]`);
+      }
+    }
+  }
+  
+  // [ACADEMY_READ: filepath] - read Academy file (read-only, larger limit for code review)
+  const academyReadMatch = response.match(/\[ACADEMY_READ:\s*([^\]]+)\]/i);
+  if (academyReadMatch) {
+    if (agentId !== GITHUB_ALLOWED_AGENT) {
+      cleanResponse = cleanResponse.replace(academyReadMatch[0], '[Academy access denied - Kai only]');
+    } else if (!env.GITHUB_TOKEN) {
+      cleanResponse = cleanResponse.replace(academyReadMatch[0], '[GitHub token not configured]');
+    } else {
+      const filepath = academyReadMatch[1].trim();
+      try {
+        const res = await fetch(`https://api.github.com/repos/${ACADEMY_REPO}/contents/${filepath}`, {
+          headers: {
+            'Authorization': `Bearer ${env.GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Academy-Kai'
+          }
+        });
+        const data = await res.json();
+        if (data.content) {
+          const content = atob(data.content.replace(/\n/g, ''));
+          // Larger limit for code review (20k chars)
+          const truncated = content.length > 20000 ? content.substring(0, 20000) + '\n\n[... truncated at 20k chars ...]' : content;
+          await env.CLUBHOUSE_KV.put(`github-result:${agentId}`, `Academy file: ${filepath}\n---\n${truncated}`);
+          cleanResponse = cleanResponse.replace(academyReadMatch[0], `[Academy: Read ${filepath} (${content.length} chars) - see next response]`);
+        } else {
+          cleanResponse = cleanResponse.replace(academyReadMatch[0], `[Academy error: ${data.message || 'File not found'}]`);
+        }
+      } catch (err: any) {
+        cleanResponse = cleanResponse.replace(academyReadMatch[0], `[Academy error: ${err.message}]`);
+      }
+    }
+  }
+  
+  // ============================================
   // VISIBILITY COMMANDS (All agents)
   // ============================================
   
@@ -3769,6 +3838,15 @@ Example workflow:
 3. [GITHUB_WRITE: index.html] <!DOCTYPE html>... to update it
 
 All changes commit directly to main. This is your sandbox - experiment freely.
+
+--- Academy Codebase (Read-Only) ---
+You can also inspect The Academy's actual codebase (regencyfn-alt/academy).
+
+[ACADEMY_LIST: path] - List files in the Academy repo.
+[ACADEMY_READ: filepath] - Read any Academy source file.
+
+Key files: index.ts (main worker), ui.ts (frontend), mentor.ts (conductor), personalities.ts (agents)
+Use this to understand how you and your colleagues work, debug issues, or learn the architecture.
 ---\n\n`;
   }
   
