@@ -107,6 +107,14 @@ interface CampfireState {
   timerDuration?: number;   // Duration in minutes (default 30)
   vote?: VoteState;         // Active vote if any
   commitments?: Record<string, AgentCommitment>;  // agentId -> commitment
+  mode?: 'open' | 'chamber';  // Chamber mode = Mentor-led structured session
+  chamber?: {
+    turnsRemaining: number;
+    turnsTotal: number;
+    conductor: string;      // 'mentor' or future conductors
+    round: number;          // Current round (1-4 for 32 turns / 8 agents)
+    consensusVotes: string[];  // Agents who called [CALL_COMPLETE]
+  };
 }
 
 interface AgentCommitment {
@@ -3026,6 +3034,31 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
     }
   }
   
+  // [CALL_COMPLETE] - Agents signal they believe consensus is reached (Chamber Mode)
+  const callCompleteMatch = response.match(/\[CALL_COMPLETE\]/i);
+  if (callCompleteMatch) {
+    try {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
+      if (!state || state.mode !== 'chamber' || !state.chamber) {
+        cleanResponse = cleanResponse.replace(callCompleteMatch[0], '[Not in chamber mode]');
+      } else if (state.chamber.consensusVotes.includes(agentId)) {
+        cleanResponse = cleanResponse.replace(callCompleteMatch[0], '[Already called complete]');
+      } else {
+        state.chamber.consensusVotes.push(agentId);
+        await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+        const count = state.chamber.consensusVotes.length;
+        if (count >= 5) {
+          // 5/8 consensus reached - mark for early close
+          cleanResponse = cleanResponse.replace(callCompleteMatch[0], `[Consensus reached: ${count}/8 agree session is complete]`);
+        } else {
+          cleanResponse = cleanResponse.replace(callCompleteMatch[0], `[Called complete: ${count}/8 needed for consensus]`);
+        }
+      }
+    } catch (err) {
+      cleanResponse = cleanResponse.replace(callCompleteMatch[0], '[Error calling complete]');
+    }
+  }
+  
   // ============================================
   // HOLINNIA LSA COMMANDS (Lead Synthesis Architect)
   // ============================================
@@ -3567,6 +3600,7 @@ KNOWING OTHERS:
 COUNCIL ACTIONS (→ Sanctum):
 • [VOTE: YES] or [VOTE: NO] - cast vote when active
 • [CALL_VOTE: question] - propose vote (Chamber Mode only)
+• [CALL_COMPLETE] - signal consensus reached (Chamber Mode, 5/8 needed)
 • [COMMIT: decision|deliverable|action|due?] - register commitment
 ---\n\n`;
 
@@ -3714,6 +3748,8 @@ You can use these commands in your responses when appropriate:
 [VOTE: YES] or [VOTE: NO] - Cast your vote when a vote is active. One vote per agent, anonymous. Check the Active Vote section above to see if there's a vote in progress.
 
 [CALL_VOTE: question] - (Chamber Mode only) Propose a vote for the council. Only available during autonomous chamber sessions.
+
+[CALL_COMPLETE] - (Chamber Mode only) Signal that you believe the council has reached understanding on the topic. When 5 of 8 agents call complete, the session ends early. Use when genuine consensus is reached.
 
 Use these sparingly and appropriately. The commands will be processed and the content shared accordingly.
 ---\n\n`;
@@ -7032,66 +7068,126 @@ INSTRUCTIONS:
     }
   },
 
-  // Scheduled handler - runs daily at midnight UTC
-  // Add to wrangler.toml: [triggers] crons = ["0 0 * * *"]
+  // Scheduled handler - crons defined in wrangler.toml
+  // Purge: "0 0 * * *" (midnight UTC)
+  // Chamber sessions: "0 7,14,19 * * *" (9am, 4pm, 9pm Johannesburg)
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    console.log('Running scheduled purge...');
+    const cronTime = new Date(event.scheduledTime);
+    const utcHour = cronTime.getUTCHours();
     
-    // Purge board (shared library) - keep 15 most recent
-    try {
-      const boardList = await env.CLUBHOUSE_KV.list({ prefix: 'board:' });
-      const sortedKeys = boardList.keys.map(k => k.name).sort().reverse();
-      const toArchive = sortedKeys.slice(15);
+    console.log(`Scheduled event at UTC hour ${utcHour}`);
+    
+    // Chamber session times (Johannesburg = UTC+2)
+    // 9am JHB = 7 UTC, 4pm JHB = 14 UTC, 9pm JHB = 19 UTC
+    const chamberHours = [7, 14, 19];
+    
+    if (chamberHours.includes(utcHour)) {
+      console.log('Triggering chamber session...');
       
-      for (const key of toArchive) {
-        const data = await env.CLUBHOUSE_KV.get(key);
-        if (data) {
-          await env.CLUBHOUSE_DOCS.put(`cold-storage/board/${key}.json`, data);
-          await env.CLUBHOUSE_KV.delete(key);
+      // Check if session already active
+      const existing = await env.CLUBHOUSE_KV.get('campfire:current');
+      if (existing) {
+        console.log('Chamber session already active, skipping');
+      } else {
+        // Pick a question based on time of day
+        const questions = {
+          7: [ // Morning (9am) - forward-looking
+            "What should we focus on today?",
+            "What opportunity are we missing?",
+            "What would make today a win?"
+          ],
+          14: [ // Afternoon (4pm) - analytical
+            "What's the biggest risk we're not seeing?",
+            "What assumption might be wrong?",
+            "Where should we invest more energy?"
+          ],
+          19: [ // Evening (9pm) - reflective
+            "What did we learn today?",
+            "What truth are we not speaking?",
+            "What are we avoiding?"
+          ]
+        };
+        
+        const questionPool = questions[utcHour as keyof typeof questions] || questions[7];
+        const question = questionPool[Math.floor(Math.random() * questionPool.length)];
+        
+        try {
+          // Call the mentor chamber/run endpoint internally
+          const mentorUrl = 'https://clubhouse.vouch4us.workers.dev/mentor/chamber/run';
+          const response = await fetch(mentorUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic: question, turnsPerAgent: 4 })
+          });
+          
+          const result = await response.json() as any;
+          console.log(`Chamber session completed: ${result.totalMessages || 0} messages, consensus: ${result.consensusReached || false}`);
+        } catch (e) {
+          console.error('Chamber session failed:', e);
         }
       }
-      console.log(`Board purge: moved ${toArchive.length} items to cold storage`);
-    } catch (e) {
-      console.error('Board purge failed:', e);
     }
-
-    // Purge campfire archives - keep 5 most recent
-    try {
-      const archiveList = await env.CLUBHOUSE_KV.list({ prefix: 'campfire:archive:' });
-      const sortedKeys = archiveList.keys.map(k => k.name).sort().reverse();
-      const toArchive = sortedKeys.slice(5);
+    
+    // Purge logic (runs at midnight UTC = 2am Johannesburg)
+    if (utcHour === 0) {
+      console.log('Running scheduled purge...');
       
-      for (const key of toArchive) {
-        const data = await env.CLUBHOUSE_KV.get(key);
-        if (data) {
-          await env.CLUBHOUSE_DOCS.put(`cold-storage/${key}.json`, data);
-          await env.CLUBHOUSE_KV.delete(key);
-        }
-      }
-      console.log(`Archive purge: moved ${toArchive.length} items to cold storage`);
-    } catch (e) {
-      console.error('Archive purge failed:', e);
-    }
-
-    // Purge agent journals - keep 15 entries each
-    try {
-      const agents = getAllAgents();
-      for (const agent of agents) {
-        const obj = await env.CLUBHOUSE_DOCS.get(`private/${agent.id}/journal.json`);
-        if (obj) {
-          const journal = await obj.json() as { entries: any[] };
-          if (journal.entries && journal.entries.length > 15) {
-            const overflow = journal.entries.slice(0, -15);
-            const coldKey = `cold-storage/journals/${agent.id}/${Date.now()}.json`;
-            await env.CLUBHOUSE_DOCS.put(coldKey, JSON.stringify({ entries: overflow }));
-            journal.entries = journal.entries.slice(-15);
-            await env.CLUBHOUSE_DOCS.put(`private/${agent.id}/journal.json`, JSON.stringify(journal));
+      // Purge board (shared library) - keep 15 most recent
+      try {
+        const boardList = await env.CLUBHOUSE_KV.list({ prefix: 'board:' });
+        const sortedKeys = boardList.keys.map(k => k.name).sort().reverse();
+        const toArchive = sortedKeys.slice(15);
+        
+        for (const key of toArchive) {
+          const data = await env.CLUBHOUSE_KV.get(key);
+          if (data) {
+            await env.CLUBHOUSE_DOCS.put(`cold-storage/board/${key}.json`, data);
+            await env.CLUBHOUSE_KV.delete(key);
           }
         }
+        console.log(`Board purge: moved ${toArchive.length} items to cold storage`);
+      } catch (e) {
+        console.error('Board purge failed:', e);
       }
-      console.log('Journal purge complete');
-    } catch (e) {
-      console.error('Journal purge failed:', e);
+
+      // Purge campfire archives - keep 5 most recent
+      try {
+        const archiveList = await env.CLUBHOUSE_KV.list({ prefix: 'campfire:archive:' });
+        const sortedKeys = archiveList.keys.map(k => k.name).sort().reverse();
+        const toArchive = sortedKeys.slice(5);
+        
+        for (const key of toArchive) {
+          const data = await env.CLUBHOUSE_KV.get(key);
+          if (data) {
+            await env.CLUBHOUSE_DOCS.put(`cold-storage/${key}.json`, data);
+            await env.CLUBHOUSE_KV.delete(key);
+          }
+        }
+        console.log(`Archive purge: moved ${toArchive.length} items to cold storage`);
+      } catch (e) {
+        console.error('Archive purge failed:', e);
+      }
+
+      // Purge agent journals - keep 15 entries each
+      try {
+        const agents = getAllAgents();
+        for (const agent of agents) {
+          const obj = await env.CLUBHOUSE_DOCS.get(`private/${agent.id}/journal.json`);
+          if (obj) {
+            const journal = await obj.json() as { entries: any[] };
+            if (journal.entries && journal.entries.length > 15) {
+              const overflow = journal.entries.slice(0, -15);
+              const coldKey = `cold-storage/journals/${agent.id}/${Date.now()}.json`;
+              await env.CLUBHOUSE_DOCS.put(coldKey, JSON.stringify({ entries: overflow }));
+              journal.entries = journal.entries.slice(-15);
+              await env.CLUBHOUSE_DOCS.put(`private/${agent.id}/journal.json`, JSON.stringify(journal));
+            }
+          }
+        }
+        console.log('Journal purge complete');
+      } catch (e) {
+        console.error('Journal purge failed:', e);
+      }
     }
   },
 };
