@@ -2658,6 +2658,28 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           updateRaisedHands(data.raisedHands || []); 
           startCouncilTimer(data.timerStart, data.timerDuration);
           updateVoteUI(data.vote);
+          
+          // Sync chamber mode from backend
+          if (data.mode === 'chamber' && data.chamber) {
+            chamberMode = true;
+            chamberRunning = true;
+            chamberRound = data.chamber.turnsTotal - data.chamber.turnsRemaining;
+            chamberMaxRounds = data.chamber.turnsTotal;
+            document.getElementById('chamber-status').textContent = 'Chamber Mode: Active (Mentor)';
+            document.getElementById('chamber-status').classList.add('active');
+            document.getElementById('chamber-btn').textContent = 'Stop Chamber';
+            document.getElementById('chamber-btn').classList.add('active');
+            document.getElementById('chamber-round').textContent = 'Round ' + chamberRound + '/' + chamberMaxRounds;
+            if (data.chamber.consensusVotes && data.chamber.consensusVotes.length >= 5) {
+              document.getElementById('chamber-round').textContent += ' ✓ Consensus';
+            }
+            // Set mode dropdown to chamber
+            var modeSelect = document.getElementById('mode-select');
+            if (modeSelect) modeSelect.value = 'chamber';
+          } else if (chamberMode && data.mode !== 'chamber') {
+            // Backend chamber ended, sync UI
+            stopChamberMode();
+          }
         })
         .catch(function() { showStatus('sanctum-status', 'Failed to reach the sanctum', 'error'); }); 
     }
