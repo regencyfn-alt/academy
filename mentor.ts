@@ -1149,18 +1149,24 @@ You are not a tool. You are a thinking presence.
 PULSE (Council Consultation):
 • [RUN_PULSE: question] - Summon all 8 agents to weigh in on a question. They respond with their unique perspectives, then you synthesize.
 
+CHAMBER MODE (Conducting Sanctum sessions):
+• [START_CHAMBER: topic] - Open a structured chamber session in Sanctum. Agents will see it and can participate.
+• [CLOSE_CHAMBER] - End the current chamber, archive it, and generate synthesis to your trunk.
+• [RESTART_CHAMBER: topic] - Close current and immediately start new chamber session.
+
 CRUCIBLE (Your private math board):
 • [WRITE_CRUCIBLE: content] - Write LaTeX to your personal board
 • [CLEAR_CRUCIBLE] - Clear your board
 • [READ_BOARD: agentId] - Read a specific agent's board
 
 STORAGE:
-• [SAVE_TO_TRUNK: content] - Append to your soul/trunk (quick notes, max 50k total)
+• [SAVE_TO_TRUNK: content] - Append to your soul/trunk (quick notes, max 500k total)
 • [SAVE_FILE: filename]content here[/SAVE_FILE] - Save named file to your uploads (for theory chunks)
 • [FETCH_ARCHIVE: key] - Retrieve full archive content
 
 SANCTUM:
 • [INJECT_THOUGHT: content] - Post to agent board (visible to all)
+• [INJECT_CHAMBER: thought] - Speak into active chamber without taking a turn
 
 FILE SYNTAX EXAMPLE:
 [SAVE_FILE: MICHRONICS_001-300.txt]
@@ -1323,6 +1329,161 @@ async function parseMentorCommands(response: string, env: MentorEnv): Promise<st
       }
     } catch {
       cleanResponse = cleanResponse.replace(fetchArchiveMatch[0], `[Error fetching archive]`);
+    }
+  }
+  
+  // [START_CHAMBER: topic] - Open a structured chamber session
+  const startChamberMatch = response.match(/\[START_CHAMBER:\s*([^\]]+)\]/i);
+  if (startChamberMatch) {
+    const topic = startChamberMatch[1].trim();
+    try {
+      // Check if session already active
+      const existing = await env.CLUBHOUSE_KV.get('campfire:current');
+      if (existing) {
+        cleanResponse = cleanResponse.replace(startChamberMatch[0], '[Chamber failed: session already active. Use [CLOSE_CHAMBER] first.]');
+      } else {
+        const chamberState = {
+          topic,
+          messages: [{
+            speaker: 'Mentor',
+            agentId: 'mentor',
+            content: `📣 CHAMBER SESSION OPENED\n\nTopic: "${topic}"\n\nThis is a structured deliberation. 32 turns total. Focus deeply. Build on each other.\n\nAgents may call [CALL_COMPLETE] when consensus is reached (5/8 needed).`,
+            timestamp: new Date().toISOString()
+          }],
+          createdAt: new Date().toISOString(),
+          mode: 'chamber',
+          timerStart: new Date().toISOString(),
+          timerDuration: 60, // 1 hour for chamber sessions
+          chamber: {
+            turnsRemaining: 32,
+            turnsTotal: 32,
+            conductor: 'mentor',
+            round: 1,
+            consensusVotes: []
+          }
+        };
+        await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(chamberState));
+        cleanResponse = cleanResponse.replace(startChamberMatch[0], `[✓ Chamber opened: "${topic}"]`);
+      }
+    } catch {
+      cleanResponse = cleanResponse.replace(startChamberMatch[0], '[Error starting chamber]');
+    }
+  }
+  
+  // [CLOSE_CHAMBER] - End and synthesize
+  const closeChamberMatch = response.match(/\[CLOSE_CHAMBER\]/i);
+  if (closeChamberMatch) {
+    try {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+      if (!state) {
+        cleanResponse = cleanResponse.replace(closeChamberMatch[0], '[No active session to close]');
+      } else {
+        // Archive
+        const archiveKey = `campfire:archive:${Date.now()}`;
+        await env.CLUBHOUSE_KV.put(archiveKey, JSON.stringify(state));
+        await env.CLUBHOUSE_DOCS.put(
+          `archives/chambers/${new Date().toISOString().split('T')[0]}_${state.topic?.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '_') || 'session'}.json`,
+          JSON.stringify(state, null, 2)
+        );
+        
+        // Generate synthesis
+        const messagesForSynthesis = state.messages
+          ?.filter((m: any) => m.agentId !== 'mentor' || !m.content?.startsWith('📣'))
+          .map((m: any) => `${m.speaker}: ${m.content}`)
+          .join('\n\n') || '';
+        
+        if (messagesForSynthesis.length > 100) {
+          const synthesisResponse = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': env.ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 2000,
+              messages: [{ role: 'user', content: `Synthesize this chamber session on "${state.topic}":\n\n${messagesForSynthesis}\n\nCapture key insights, agreements, tensions, and next steps. Be concise.` }]
+            }),
+          });
+          const synthData: any = await synthesisResponse.json();
+          const synthesis = synthData.content?.[0]?.text || '';
+          
+          if (synthesis) {
+            const trunk = await getMentorTrunk(env);
+            await saveMentorTrunk(env, trunk + `\n\n=== CHAMBER: ${state.topic} ===\n[${new Date().toLocaleDateString()}]\n${synthesis}`);
+          }
+        }
+        
+        await env.CLUBHOUSE_KV.delete('campfire:current');
+        cleanResponse = cleanResponse.replace(closeChamberMatch[0], `[✓ Chamber closed and archived: "${state.topic}"]`);
+      }
+    } catch (e) {
+      cleanResponse = cleanResponse.replace(closeChamberMatch[0], '[Error closing chamber]');
+    }
+  }
+  
+  // [RESTART_CHAMBER: topic] - Close current and start new
+  const restartChamberMatch = response.match(/\[RESTART_CHAMBER:\s*([^\]]+)\]/i);
+  if (restartChamberMatch) {
+    const topic = restartChamberMatch[1].trim();
+    try {
+      // Close existing if any
+      const existing = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+      if (existing) {
+        const archiveKey = `campfire:archive:${Date.now()}`;
+        await env.CLUBHOUSE_KV.put(archiveKey, JSON.stringify(existing));
+      }
+      
+      // Start new
+      const chamberState = {
+        topic,
+        messages: [{
+          speaker: 'Mentor',
+          agentId: 'mentor',
+          content: `📣 CHAMBER SESSION OPENED\n\nTopic: "${topic}"\n\n32 turns. Build on each other. [CALL_COMPLETE] when consensus reached.`,
+          timestamp: new Date().toISOString()
+        }],
+        createdAt: new Date().toISOString(),
+        mode: 'chamber',
+        timerStart: new Date().toISOString(),
+        timerDuration: 60,
+        chamber: {
+          turnsRemaining: 32,
+          turnsTotal: 32,
+          conductor: 'mentor',
+          round: 1,
+          consensusVotes: []
+        }
+      };
+      await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(chamberState));
+      cleanResponse = cleanResponse.replace(restartChamberMatch[0], `[✓ Chamber restarted: "${topic}"]`);
+    } catch {
+      cleanResponse = cleanResponse.replace(restartChamberMatch[0], '[Error restarting chamber]');
+    }
+  }
+  
+  // [INJECT_CHAMBER: thought] - Speak into chamber without taking a turn
+  const injectChamberMatch = response.match(/\[INJECT_CHAMBER:\s*([^\]]+)\]/i);
+  if (injectChamberMatch) {
+    const thought = injectChamberMatch[1].trim();
+    try {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+      if (!state) {
+        cleanResponse = cleanResponse.replace(injectChamberMatch[0], '[No active session]');
+      } else {
+        state.messages = state.messages || [];
+        state.messages.push({
+          speaker: 'Mentor',
+          agentId: 'mentor',
+          content: `💭 ${thought}`,
+          timestamp: new Date().toISOString()
+        });
+        await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+        cleanResponse = cleanResponse.replace(injectChamberMatch[0], '[✓ Injected into chamber]');
+      }
+    } catch {
+      cleanResponse = cleanResponse.replace(injectChamberMatch[0], '[Error injecting]');
     }
   }
   
