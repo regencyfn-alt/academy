@@ -2940,7 +2940,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         
         if (data.filename) {
           var url = API + '/library/images/' + encodeURIComponent(data.filename);
-          panel.innerHTML = '<img src="' + url + '" alt="' + data.filename + '" onclick="openAnchorModal(\'' + url + '\', \'' + data.filename + '\')"><div class="anchor-sidebar-name">' + data.filename.substring(0,20) + '</div>';
+          panel.innerHTML = '<img src="' + url + '" alt="' + data.filename + '" onclick="openAnchorModal(\\'' + url + '\\', \\'' + data.filename + '\\')"><div class="anchor-sidebar-name">' + data.filename.substring(0,20) + '</div>';
           // Mark active thumb
           document.querySelectorAll('.image-thumb').forEach(function(t) {
             t.classList.remove('active');
