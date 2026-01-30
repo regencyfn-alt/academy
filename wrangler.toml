@@ -24,4 +24,6 @@ MENTOR_ASSISTANT_ID = "asst_1XaKhMdOR1KbAP9JXMUDYXsf"
 MENTOR_THREAD_ID = "thread_cYjM9sy84F6ILMlmao2NDSmV"
 
 [triggers]
-crons = ["0 12 * * *"]
+# Chamber sessions: 9am, 4pm, 9pm Johannesburg (UTC+2 = 7, 14, 19 UTC)
+# Purge: midnight UTC (2am Johannesburg)
+crons = ["0 0,7,14,19 * * *"]
