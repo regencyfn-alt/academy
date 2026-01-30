@@ -680,7 +680,7 @@ export const UI_HTML = `<!DOCTYPE html>
   <div class="main-wrapper">
     <div class="main-content-area" id="main-content">
     <div id="sanctum" class="panel active">
-      <div class="topic-bar"><span class="topic" id="sanctum-topic">The Council Awaits</span><span id="session-leader" style="font-size: 0.85em; color: var(--silver); margin-left: 12px; display: none;"></span><span id="council-timer" style="font-size: 0.9em; color: var(--gold); margin-left: 15px; font-variant-numeric: tabular-nums;"></span><div class="topic-actions"><button id="record-session-btn" class="btn btn-secondary" onclick="startRecordingSession()">⏺ Record</button><button class="btn btn-secondary" onclick="archiveSanctum()">Preserve</button><button class="btn btn-primary" onclick="showConveneModal()">Convene</button></div></div>
+      <div class="topic-bar"><span class="topic" id="sanctum-topic">The Council Awaits</span><span id="session-leader" style="font-size: 0.85em; color: var(--silver); margin-left: 12px; display: none;"></span><span id="council-timer" style="font-size: 0.9em; color: var(--gold); margin-left: 15px; font-variant-numeric: tabular-nums;"></span><div class="topic-actions"><button id="assign-leader-btn" class="btn btn-secondary" onclick="showAssignLeaderModal()" title="Assign session leader">★</button><button id="record-session-btn" class="btn btn-secondary" onclick="startRecordingSession()">⏺ Record</button><button class="btn btn-secondary" onclick="archiveSanctum()">Preserve</button><button class="btn btn-primary" onclick="showConveneModal()">Convene</button></div></div>
       <div id="sanctum-status"></div>
       <div class="conversation" id="sanctum-messages"><div class="empty"><div class="rune">ᚦ</div><p>The threshold awaits.<br>Convene to begin.</p></div></div>
       <div class="input-area">
@@ -1425,6 +1425,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
   
 
   <div class="modal" id="convene-modal"><div class="modal-content"><h2>Convene the Council</h2><input type="text" id="convene-topic" placeholder="Topic of discourse..."><div style="margin: 15px 0;"><label style="color: var(--silver); font-size: 0.85em;">Session Leader (optional):</label><select id="convene-leader" style="width: 100%; padding: 8px; margin-top: 5px; background: var(--void); color: var(--text); border: 1px solid var(--gold); border-radius: 4px;"><option value="">No leader (open session)</option></select></div><div class="modal-buttons"><button class="btn btn-secondary" onclick="hideConveneModal()">Withdraw</button><button class="btn btn-primary" onclick="createSanctum()">Convene</button></div></div></div>
+  <div class="modal" id="assign-leader-modal"><div class="modal-content"><h2>★ Assign Leader</h2><p style="color: var(--silver); margin-bottom: 15px;">Select who should lead this session:</p><select id="assign-leader-select" style="width: 100%; padding: 10px; background: var(--void); color: var(--text); border: 1px solid var(--gold); border-radius: 4px;"><option value="">No leader (open session)</option></select><div class="modal-buttons" style="margin-top: 20px;"><button class="btn btn-secondary" onclick="hideAssignLeaderModal()">Cancel</button><button class="btn btn-primary" onclick="assignLeader()">Assign</button></div></div></div>
   <div class="image-modal" id="image-modal" onclick="closeImageModal()"><img id="modal-image" src=""></div>
   
   <!-- Temporal Resonance Widget -->
@@ -3094,6 +3095,32 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       });
     }
     function createSanctum() { var topic = document.getElementById('convene-topic').value || 'Open Council'; var leader = document.getElementById('convene-leader').value || null; fetch(API + '/campfire/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: topic, leader: leader }), credentials: 'same-origin' }).then(function() { hideConveneModal(); document.getElementById('convene-topic').value = ''; document.getElementById('convene-leader').value = ''; loadSanctum(); showStatus('sanctum-status', leader ? 'Council convened with ' + leader + ' leading' : 'Council convened', 'success'); }).catch(function() { showStatus('sanctum-status', 'Failed to convene', 'error'); }); }
+    function showAssignLeaderModal() {
+      var select = document.getElementById('assign-leader-select');
+      select.innerHTML = '<option value="">No leader (open session)</option>';
+      agents.forEach(function(a) {
+        select.innerHTML += '<option value="' + a.id + '">' + (a.customName || a.name) + '</option>';
+      });
+      document.getElementById('assign-leader-modal').classList.add('active');
+    }
+    function hideAssignLeaderModal() { document.getElementById('assign-leader-modal').classList.remove('active'); }
+    function assignLeader() {
+      var leader = document.getElementById('assign-leader-select').value || null;
+      fetch(API + '/campfire/leader', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leader: leader }), credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          hideAssignLeaderModal();
+          loadSanctum();
+          if (leader) {
+            var leaderAgent = agents.find(function(a) { return a.id === leader; });
+            var leaderName = leaderAgent ? (leaderAgent.customName || leaderAgent.name) : leader;
+            showStatus('sanctum-status', '★ ' + leaderName + ' is now leading', 'success');
+          } else {
+            showStatus('sanctum-status', 'Leader removed - open session', 'success');
+          }
+        })
+        .catch(function() { showStatus('sanctum-status', 'Failed to assign leader', 'error'); });
+    }
     function shaneSpeaks() { 
       var input = document.getElementById('sanctum-input'); 
       var message = input.value.trim(); 
