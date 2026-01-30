@@ -2936,9 +2936,11 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         currentAnchorFilename = data.filename || null;
         
         var panel = document.getElementById('anchor-sidebar-content');
+        if (!panel) return;
+        
         if (data.filename) {
           var url = API + '/library/images/' + encodeURIComponent(data.filename);
-          panel.innerHTML = '<img src="' + url + '" alt="' + data.filename + '" onclick="openAnchorModal(\\'' + url + '\\', \\'' + data.filename + '\\')"><div class="anchor-sidebar-name">' + data.filename.substring(0,20) + '</div>';
+          panel.innerHTML = '<img src="' + url + '" alt="' + data.filename + '" onclick="openAnchorModal(\'' + url + '\', \'' + data.filename + '\')"><div class="anchor-sidebar-name">' + data.filename.substring(0,20) + '</div>';
           // Mark active thumb
           document.querySelectorAll('.image-thumb').forEach(function(t) {
             t.classList.remove('active');
@@ -2947,7 +2949,8 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         } else {
           panel.innerHTML = '<div class="anchor-sidebar-empty">Click thumbnail</div>';
         }
-      });
+      })
+      .catch(function() {});
     }
     
     function openAnchorModal(url, filename) {
@@ -3648,7 +3651,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             document.getElementById('private-memory-view').innerHTML = '<div class="empty" style="padding: 20px;">No self model initialized</div>';
           }
         })
-        .catch(function() { document.getElementById('private-memory-view').innerHTML = '<div class="empty" style="padding: 20px;">Failed to load</div>'; });
+        .catch(function() { var el = document.getElementById('private-memory-view'); if (el) el.innerHTML = '<div class="empty" style="padding: 20px;">Failed to load</div>'; });
       
       // Load functional behaviour traits
       fetch(API + '/agents/' + agent + '/behaviour', { credentials: 'same-origin' })
@@ -5313,6 +5316,8 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         .then(function(data) {
           var fill = document.getElementById('spectrum-fill');
           var tooltip = document.getElementById('spectrum-tooltip');
+          
+          if (!fill || !tooltip || !data) return;
           
           // Update fill width and color
           fill.style.width = (data.overall * 10) + '%';
