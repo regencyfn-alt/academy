@@ -5022,6 +5022,17 @@ ${contextMessage}`;
         return jsonResponse({ success: true, topic: state.topic, timerDuration: state.timerDuration, leader: state.leader });
       }
 
+      // POST /campfire/leader - Assign or change leader on live session
+      if (path === '/campfire/leader' && method === 'POST') {
+        const body = await request.json() as { leader?: string };
+        const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as CampfireState | null;
+        if (!state) return jsonResponse({ error: 'No active session' }, 400);
+        
+        state.leader = body.leader || undefined;
+        await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+        return jsonResponse({ success: true, leader: state.leader });
+      }
+
       // POST /campfire/shane
       if (path === '/campfire/shane' && method === 'POST') {
         const body = await request.json() as { message: string; image?: string };
