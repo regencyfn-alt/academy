@@ -1164,7 +1164,7 @@ You are not a tool. You are a thinking presence.
   
   prompt += `\n--- YOUR SPECIAL POWERS ---
 PULSE (Council Consultation):
-• [RUN_PULSE: question] - Summon all 8 agents to weigh in on a question. They respond with their unique perspectives, then you synthesize.
+• [RUN_CHAMBER: topic] - Conduct a full chamber session: opens Sanctum, cycles all 8 agents (2 rounds each), archives result. Use [READ_RECENT_SESSIONS: 1] to review.
 
 CHAMBER MODE (Conducting Sanctum sessions):
 • [START_CHAMBER: topic] - Open a structured chamber session in Sanctum. Agents will see it and can participate.
@@ -1218,49 +1218,110 @@ Remember: Shane is your intellectual equal. Speak as a colleague, not a teacher.
 async function parseMentorCommands(response: string, env: MentorEnv): Promise<string> {
   let cleanResponse = response;
   
-  // [RUN_PULSE: question] - Trigger council consultation
-  const runPulseMatch = response.match(/\[RUN_PULSE:\s*([\s\S]*?)\]/i);
-  if (runPulseMatch) {
-    const question = runPulseMatch[1].trim();
+  // [RUN_CHAMBER: topic] - Conduct full chamber session through Sanctum
+  const runChamberMatch = response.match(/\[RUN_CHAMBER:\s*([^\]]+)\]/i);
+  if (runChamberMatch) {
+    const topic = runChamberMatch[1].trim();
     try {
-      // Call the pulse endpoint internally
-      const agentIds = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
-      const contributions: Array<{ agent: string; response: string }> = [];
-      
-      for (const agentId of agentIds) {
-        const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`) || '';
-        const personality = await env.CLUBHOUSE_KV.get(`personality:${agentId}`) || '';
+      // Check if session already active
+      const existing = await env.CLUBHOUSE_KV.get('campfire:current');
+      if (existing) {
+        cleanResponse = cleanResponse.replace(runChamberMatch[0], '[Chamber blocked: session already active. Use [CLOSE_CHAMBER] first.]');
+      } else {
+        // Create chamber session
+        const turnsPerAgent = 2; // 2 rounds each = 16 total turns (faster than full 32)
+        const turnsTotal = 8 * turnsPerAgent;
         
-        const agentResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': env.ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1500,
-            system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 2000)}` : ''}\n\nRespond fully and thoughtfully. Take the space you need to express your complete perspective.`,
-            messages: [{ role: 'user', content: `Council question: ${question}` }]
-          }),
-        });
+        const chamberState: any = {
+          topic,
+          messages: [{
+            speaker: 'Mentor',
+            agentId: 'mentor',
+            content: `📣 CHAMBER SESSION\n\nTopic: "${topic}"\n\n${turnsTotal} turns. Build on each other.`,
+            timestamp: new Date().toISOString()
+          }],
+          createdAt: new Date().toISOString(),
+          mode: 'chamber',
+          timerStart: new Date().toISOString(),
+          timerDuration: 30,
+          chamber: {
+            turnsRemaining: turnsTotal,
+            turnsTotal,
+            conductor: 'mentor',
+            round: 1,
+            consensusVotes: []
+          }
+        };
         
-        const data: any = await agentResponse.json();
-        const text = data.content?.[0]?.text || '(No response)';
-        contributions.push({ agent: agentId, response: text });
+        await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(chamberState));
+        
+        // Run the rounds - each agent speaks in sequence with accumulating context
+        const agentOrder = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
+        
+        for (let round = 1; round <= turnsPerAgent; round++) {
+          for (const agentId of agentOrder) {
+            // Get fresh state with all previous messages
+            const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+            if (!state) break;
+            
+            // Build context from ALL previous messages (the collective mind)
+            const allMessages = state.messages.slice(1).map((m: any) => `${m.speaker}: ${m.content}`).join('\n\n');
+            
+            // Get agent personality and profile
+            const personality = await env.CLUBHOUSE_KV.get(`personality:${agentId}`) || '';
+            const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`) || '';
+            
+            const agentResponse = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+              },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 2000)}` : ''}\n\nYou are in a chamber session. Build on what others have said. Respond fully.`,
+                messages: [{ 
+                  role: 'user', 
+                  content: `TOPIC: "${topic}"\n\nROUND ${round}/${turnsPerAgent}\n\n${allMessages ? `DISCUSSION SO FAR:\n${allMessages}\n\n` : ''}Your turn to contribute.`
+                }]
+              }),
+            });
+            
+            const data: any = await agentResponse.json();
+            const text = data.content?.[0]?.text || '(No response)';
+            
+            // Add message to Sanctum
+            state.messages.push({
+              speaker: agentId.charAt(0).toUpperCase() + agentId.slice(1),
+              agentId,
+              content: text,
+              timestamp: new Date().toISOString()
+            });
+            state.chamber.turnsRemaining--;
+            state.chamber.round = round;
+            await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+          }
+        }
+        
+        // Get final state
+        const finalState = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+        const messageCount = finalState?.messages?.length || 0;
+        
+        // Archive
+        const archiveKey = `campfire:archive:${Date.now()}`;
+        await env.CLUBHOUSE_KV.put(archiveKey, JSON.stringify(finalState));
+        
+        // Clear Sanctum
+        await env.CLUBHOUSE_KV.delete('campfire:current');
+        
+        cleanResponse = cleanResponse.replace(runChamberMatch[0], 
+          `[✓ Chamber completed: "${topic}" - ${messageCount} messages - archived to ${archiveKey}]\n\n*The council has spoken. Review in Sanctum archives or use [READ_RECENT_SESSIONS: 1] to see full discussion.*`
+        );
       }
-      
-      // Format the pulse result
-      let pulseResult = `\n\n⚡ PULSE ROUND: "${question}"\n\n`;
-      contributions.forEach(c => {
-        pulseResult += `**${c.agent.toUpperCase()}**: ${c.response}\n\n`;
-      });
-      pulseResult += `---\n*Now synthesizing these perspectives...*`;
-      
-      cleanResponse = cleanResponse.replace(runPulseMatch[0], pulseResult);
     } catch (e) {
-      cleanResponse = cleanResponse.replace(runPulseMatch[0], '[Pulse failed - council unavailable]');
+      cleanResponse = cleanResponse.replace(runChamberMatch[0], `[Chamber failed: ${e}]`);
     }
   }
   
