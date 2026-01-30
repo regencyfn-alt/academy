@@ -694,7 +694,7 @@ async function getMentorUploads(env: MentorEnv): Promise<{ name: string; content
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
         const name = obj.key.replace('private/mentor/uploads/', '');
-        uploads.push({ name, content: (await doc.text()).slice(0, 50000) }); // 50k per file
+        uploads.push({ name, content: (await doc.text()).slice(0, 100000) }); // 100k per file
       }
     }
     return uploads;
@@ -1078,8 +1078,8 @@ async function saveMentorSessionMemory(env: MentorEnv, entries: Array<{ timestam
 // R2 TRUNK BACKUP (Soul Core Insurance)
 // ============================================
 
-const TRUNK_LIMIT = 50000;
-const TRUNK_ARCHIVE_THRESHOLD = 40000; // Archive when this full before adding more
+const TRUNK_LIMIT = 500000; // 500k for books
+const TRUNK_ARCHIVE_THRESHOLD = 400000; // Archive when this full before adding more
 
 async function getMentorTrunk(env: MentorEnv): Promise<string> {
   // Try KV first
