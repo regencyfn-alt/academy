@@ -3055,9 +3055,9 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       messages.forEach(function(m) {
         var msgId = m.timestamp + ':' + m.agentId;
         if (!playedMessageIds[msgId]) {
-          playedMessageIds[msgId] = true;
-          // Only play voice if initial load is complete
-          if (initialLoadComplete && m.content && soundEnabled) {
+          markMessagePlayed(msgId);
+          // Only play voice if initial load is complete and not in chamber mode
+          if (initialLoadComplete && m.content && soundEnabled && !chamberMode) {
             queueVoice(m.content, m.agentId);
           }
         }
@@ -3116,13 +3116,26 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     var sanctumPendingImage = null;
     var alcovePendingText = null;
     var sanctumPendingText = null;
-    var playedMessageIds = {};  // Track which messages have been played
+    var playedMessageIds = JSON.parse(localStorage.getItem('playedMessageIds') || '{}');  // Persist across refresh
     var voiceQueue = [];        // Queue for sequential playback
     var isPlayingVoice = false;
     var initialLoadComplete = false;  // Flag to prevent replay on page load
     
+    function markMessagePlayed(msgId) {
+      playedMessageIds[msgId] = true;
+      // Keep only last 500 to prevent unbounded growth
+      var keys = Object.keys(playedMessageIds);
+      if (keys.length > 500) {
+        var toRemove = keys.slice(0, keys.length - 500);
+        toRemove.forEach(function(k) { delete playedMessageIds[k]; });
+      }
+      localStorage.setItem('playedMessageIds', JSON.stringify(playedMessageIds));
+    }
+    
     function queueVoice(text, agentId) {
       if (!soundEnabled || !text) return;
+      // Don't queue voice during chamber mode (backend-controlled)
+      if (chamberMode) return;
       voiceQueue.push({ text: text, agentId: agentId });
       processVoiceQueue();
     }
@@ -4986,6 +4999,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       chamberMode = false;
       chamberRunning = false;
       arenaMode = false;
+      killVoices(); // Clear any queued voices from chamber session
       var modeLabel = activeMode === 'arena' ? 'Arena' : 'Chamber';
       document.getElementById('chamber-status').textContent = 'Mode: ' + modeLabel;
       document.getElementById('chamber-status').classList.remove('active');
