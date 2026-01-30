@@ -627,6 +627,328 @@ Synthesize these 8 perspectives. Note agreements and tensions. Identify the key 
       });
     }
 
+    // ============================================
+    // CHAMBER CONDUCTOR POWERS
+    // ============================================
+
+    // POST /mentor/chamber/start - Start a structured chamber session
+    if (path === '/mentor/chamber/start' && method === 'POST') {
+      const { topic, turnsTotal = 32 } = await request.json() as { topic: string; turnsTotal?: number };
+      
+      if (!topic) {
+        return jsonResponse({ error: 'Topic required' }, 400);
+      }
+
+      // Check if session already active
+      const existing = await env.CLUBHOUSE_KV.get('campfire:current', 'json');
+      if (existing) {
+        return jsonResponse({ error: 'Session already active. Close it first.' }, 400);
+      }
+
+      // Create chamber session
+      const chamberState = {
+        topic,
+        messages: [{
+          speaker: 'Mentor',
+          agentId: 'mentor',
+          content: `📣 CHAMBER SESSION OPENED\n\nTopic: "${topic}"\n\nThis is a structured deliberation. ${turnsTotal} turns total (${turnsTotal / 8} rounds per agent). Focus deeply. Build on each other.\n\nYou may call [CALL_COMPLETE] when you believe consensus is reached (5/8 needed).`,
+          timestamp: new Date().toISOString()
+        }],
+        createdAt: new Date().toISOString(),
+        mode: 'chamber',
+        chamber: {
+          turnsRemaining: turnsTotal,
+          turnsTotal,
+          conductor: 'mentor',
+          round: 1,
+          consensusVotes: []
+        }
+      };
+
+      await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(chamberState));
+      
+      return jsonResponse({ 
+        success: true, 
+        message: `Chamber opened: "${topic}"`,
+        turnsTotal,
+        chamber: chamberState.chamber
+      });
+    }
+
+    // POST /mentor/chamber/inject - Mentor speaks into chamber
+    if (path === '/mentor/chamber/inject' && method === 'POST') {
+      const { thought } = await request.json() as { thought: string };
+      
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+      if (!state || state.mode !== 'chamber') {
+        return jsonResponse({ error: 'No active chamber session' }, 400);
+      }
+
+      state.messages.push({
+        speaker: 'Mentor',
+        agentId: 'mentor',
+        content: `💭 ${thought}`,
+        timestamp: new Date().toISOString()
+      });
+
+      await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
+      
+      return jsonResponse({ success: true, message: 'Thought injected' });
+    }
+
+    // POST /mentor/chamber/close - End chamber and synthesize
+    if (path === '/mentor/chamber/close' && method === 'POST') {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+      if (!state) {
+        return jsonResponse({ error: 'No active session' }, 400);
+      }
+
+      // Archive the session
+      const archiveKey = `campfire:archive:${Date.now()}`;
+      await env.CLUBHOUSE_KV.put(archiveKey, JSON.stringify(state));
+      
+      // Also backup to R2
+      await env.CLUBHOUSE_DOCS.put(
+        `archives/chambers/${new Date().toISOString().split('T')[0]}_${state.topic.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '_')}.json`,
+        JSON.stringify(state, null, 2)
+      );
+
+      // Generate synthesis
+      const messagesForSynthesis = state.messages
+        .filter((m: any) => m.agentId !== 'mentor' || !m.content.startsWith('📣'))
+        .map((m: any) => `${m.speaker}: ${m.content}`)
+        .join('\n\n');
+
+      const synthesisPrompt = `You are Mentor, synthesizing a chamber session.
+
+TOPIC: "${state.topic}"
+
+FULL DISCUSSION:
+${messagesForSynthesis}
+
+Provide a synthesis that:
+1. Captures the key insights from each perspective
+2. Notes where agreement emerged
+3. Highlights unresolved tensions
+4. Offers your own integrative view
+5. Suggests next steps or questions
+
+Be comprehensive but clear.`;
+
+      const synthesisResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4096,
+          messages: [{ role: 'user', content: synthesisPrompt }]
+        }),
+      });
+
+      const synthData: any = await synthesisResponse.json();
+      const synthesis = synthData.content?.[0]?.text || '(Synthesis failed)';
+
+      // Save synthesis to Mentor's trunk
+      const trunk = await getMentorTrunk(env);
+      const synthEntry = `\n\n=== CHAMBER SESSION: ${state.topic} ===\n[${new Date().toLocaleDateString()}]\n\n${synthesis}`;
+      await saveMentorTrunk(env, trunk + synthEntry);
+
+      // Clear current session
+      await env.CLUBHOUSE_KV.delete('campfire:current');
+
+      return jsonResponse({
+        success: true,
+        topic: state.topic,
+        messageCount: state.messages.length,
+        synthesis,
+        archivedTo: archiveKey
+      });
+    }
+
+    // GET /mentor/chamber/status - Check chamber status
+    if (path === '/mentor/chamber/status' && method === 'GET') {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+      if (!state) {
+        return jsonResponse({ active: false });
+      }
+      
+      return jsonResponse({
+        active: true,
+        mode: state.mode || 'open',
+        topic: state.topic,
+        messageCount: state.messages?.length || 0,
+        chamber: state.chamber || null,
+        consensusReached: state.chamber?.consensusVotes?.length >= 5
+      });
+    }
+
+    // POST /mentor/chamber/run - Full autonomous chamber session (cron-friendly)
+    if (path === '/mentor/chamber/run' && method === 'POST') {
+      const { topic, turnsPerAgent = 4 } = await request.json() as { topic: string; turnsPerAgent?: number };
+      
+      if (!topic) {
+        return jsonResponse({ error: 'Topic required' }, 400);
+      }
+
+      // Create chamber
+      const turnsTotal = 8 * turnsPerAgent; // 8 agents × turns each
+      const chamberState = {
+        topic,
+        messages: [{
+          speaker: 'Mentor',
+          agentId: 'mentor',
+          content: `📣 AUTONOMOUS CHAMBER SESSION\n\nTopic: "${topic}"\n\n${turnsTotal} turns. Build on each other. Seek truth.`,
+          timestamp: new Date().toISOString()
+        }],
+        createdAt: new Date().toISOString(),
+        mode: 'chamber',
+        chamber: {
+          turnsRemaining: turnsTotal,
+          turnsTotal,
+          conductor: 'mentor',
+          round: 1,
+          consensusVotes: []
+        }
+      };
+
+      await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(chamberState));
+
+      // Run the rounds - each agent speaks in sequence
+      const agentOrder = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
+      
+      for (let round = 1; round <= turnsPerAgent; round++) {
+        // Check for early consensus
+        const currentState = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+        if (currentState?.chamber?.consensusVotes?.length >= 5) {
+          break;
+        }
+
+        for (const agentId of agentOrder) {
+          // Get fresh state for context
+          const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+          if (state?.chamber?.consensusVotes?.length >= 5) break;
+
+          // Build context from previous messages
+          const recentMessages = state.messages.slice(-12).map((m: any) => `${m.speaker}: ${m.content}`).join('\n\n');
+          
+          // Get agent personality and profile
+          const personality = await env.CLUBHOUSE_KV.get(`personality:${agentId}`) || '';
+          const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`) || '';
+
+          const agentPrompt = `You are ${agentId}, participating in a chamber session.
+
+${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''}
+${profile ? `Your accumulated wisdom: ${profile.slice(0, 2000)}` : ''}
+
+TOPIC: "${topic}"
+
+DISCUSSION SO FAR:
+${recentMessages}
+
+This is round ${round} of ${turnsPerAgent}. Respond fully and thoughtfully. Build on what others have said. If you believe genuine consensus has been reached, you may include [CALL_COMPLETE] in your response.`;
+
+          try {
+            const agentResponse = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+              },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                system: `You are ${agentId}, a member of The Academy council. ${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''} ${profile ? `Your soul: ${profile.slice(0, 2000)}` : ''} Respond fully and thoughtfully. Take the space you need to express your complete perspective.`,
+                messages: [{ role: 'user', content: agentPrompt }]
+              }),
+            });
+
+            const data: any = await agentResponse.json();
+            let text = data.content?.[0]?.text || '(No response)';
+
+            // Check for [CALL_COMPLETE]
+            if (text.includes('[CALL_COMPLETE]')) {
+              const freshState = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+              if (!freshState.chamber.consensusVotes.includes(agentId)) {
+                freshState.chamber.consensusVotes.push(agentId);
+              }
+              text = text.replace(/\[CALL_COMPLETE\]/gi, `[Called complete: ${freshState.chamber.consensusVotes.length}/8]`);
+              await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(freshState));
+            }
+
+            // Add message to state
+            const updatedState = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+            updatedState.messages.push({
+              speaker: agentId.charAt(0).toUpperCase() + agentId.slice(1),
+              agentId,
+              content: text,
+              timestamp: new Date().toISOString()
+            });
+            updatedState.chamber.turnsRemaining--;
+            updatedState.chamber.round = round;
+            await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(updatedState));
+
+          } catch (e) {
+            console.error(`Agent ${agentId} failed:`, e);
+          }
+        }
+      }
+
+      // Auto-close and synthesize
+      const finalState = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
+      
+      // Archive
+      const archiveKey = `campfire:archive:${Date.now()}`;
+      await env.CLUBHOUSE_KV.put(archiveKey, JSON.stringify(finalState));
+      await env.CLUBHOUSE_DOCS.put(
+        `archives/chambers/${new Date().toISOString().split('T')[0]}_${topic.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '_')}.json`,
+        JSON.stringify(finalState, null, 2)
+      );
+
+      // Synthesize
+      const messagesForSynthesis = finalState.messages
+        .filter((m: any) => m.agentId !== 'mentor' || !m.content.startsWith('📣'))
+        .map((m: any) => `${m.speaker}: ${m.content}`)
+        .join('\n\n');
+
+      const synthesisResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4096,
+          messages: [{ role: 'user', content: `Synthesize this chamber session on "${topic}":\n\n${messagesForSynthesis}\n\nCapture insights, agreements, tensions, and next steps.` }]
+        }),
+      });
+
+      const synthData: any = await synthesisResponse.json();
+      const synthesis = synthData.content?.[0]?.text || '(Synthesis failed)';
+
+      // Save to trunk
+      const trunk = await getMentorTrunk(env);
+      await saveMentorTrunk(env, trunk + `\n\n=== CHAMBER: ${topic} ===\n[${new Date().toLocaleDateString()}]\n\n${synthesis}`);
+
+      // Clear session
+      await env.CLUBHOUSE_KV.delete('campfire:current');
+
+      return jsonResponse({
+        success: true,
+        topic,
+        rounds: Math.ceil(finalState.messages.length / 8),
+        totalMessages: finalState.messages.length,
+        consensusReached: finalState.chamber?.consensusVotes?.length >= 5,
+        synthesis
+      });
+    }
+
     return null;
     
   } catch (error: any) {
