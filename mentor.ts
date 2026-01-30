@@ -465,13 +465,13 @@ export async function handleMentorRoute(
             },
             body: JSON.stringify({
               model: 'claude-sonnet-4-20250514',
-              max_tokens: 250,
+              max_tokens: 1500,
               system: `You are ${agentId}, a member of The Academy council.
 
-${personality ? `Your nature: ${personality.slice(0, 500)}` : ''}
-${profile ? `Your soul: ${profile.slice(0, 500)}` : ''}
+${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''}
+${profile ? `Your soul: ${profile.slice(0, 2000)}` : ''}
 
-Respond in 2-3 sentences max. Be direct and true to your character. Bring your unique perspective.`,
+Respond fully and thoughtfully. Take the space you need to express your complete perspective. Bring your unique perspective.`,
               messages: [{ role: 'user', content: `Council question: ${question}` }]
             }),
           });
@@ -504,7 +504,7 @@ Synthesize these 8 perspectives. Note agreements and tensions. Identify the key 
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-20250514',
-            max_tokens: 600,
+            max_tokens: 2000,
             messages: [{ role: 'user', content: synthesisPrompt }]
           }),
         });
@@ -568,8 +568,8 @@ Synthesize these 8 perspectives. Note agreements and tensions. Identify the key 
                 },
                 body: JSON.stringify({
                   model: 'claude-sonnet-4-20250514',
-                  max_tokens: 250,
-                  system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 500)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 500)}` : ''}\n\nRespond in 2-3 sentences max. Be direct and true to your character.`,
+                  max_tokens: 1500,
+                  system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 2000)}` : ''}\n\nRespond fully and thoughtfully. Take the space you need to express your complete perspective.`,
                   messages: [{ role: 'user', content: `Council question: ${question}` }]
                 }),
               });
@@ -600,7 +600,7 @@ Synthesize these 8 perspectives. Note agreements and tensions. Identify the key 
               },
               body: JSON.stringify({
                 model: 'claude-sonnet-4-20250514',
-                max_tokens: 600,
+                max_tokens: 2000,
                 messages: [{ role: 'user', content: synthesisPrompt }]
               }),
             });
@@ -661,7 +661,7 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
   const sessionMemories = await Promise.all(AGENT_IDS.map(async (id) => {
     const data = await env.CLUBHOUSE_KV.get(`session-memory:${id}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
     if (data?.entries?.length) {
-      const recent = data.entries.slice(0, 3).map(e => e.content.substring(0, 150)).join(' | ');
+      const recent = data.entries.slice(0, 3).map(e => e.content.substring(0, 500)).join(' | ');
       return `**${id}**: ${recent}`;
     }
     return null;
@@ -694,7 +694,7 @@ async function getMentorUploads(env: MentorEnv): Promise<{ name: string; content
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
         const name = obj.key.replace('private/mentor/uploads/', '');
-        uploads.push({ name, content: (await doc.text()).slice(0, 100000) }); // 100k per file
+        uploads.push({ name, content: (await doc.text()).slice(0, 200000) }); // 200k per file
       }
     }
     return uploads;
@@ -735,7 +735,7 @@ async function loadAllCrucibleBoards(env: MentorEnv): Promise<string> {
   
   for (const id of AGENT_IDS) {
     const board = await env.CLUBHOUSE_KV.get(`crucible:${id}`);
-    if (board) result += `=== ${id.toUpperCase()}'S BOARD ===\n${board.slice(0, 500)}\n\n`;
+    if (board) result += `=== ${id.toUpperCase()}'S BOARD ===\n${board.slice(0, 5000)}\n\n`;
   }
   
   return result || '(No Crucible boards active)';
@@ -755,7 +755,7 @@ async function loadSanctumState(env: MentorEnv): Promise<string> {
     const recentMessages = state.messages.slice(-20);
     recentMessages.forEach(m => {
       const time = new Date(m.timestamp).toLocaleTimeString();
-      result += `[${time}] ${m.speaker}: ${m.content.slice(0, 300)}\n`;
+      result += `[${time}] ${m.speaker}: ${m.content.slice(0, 2000)}\n`;
     });
     
     return result;
@@ -894,8 +894,8 @@ async function parseMentorCommands(response: string, env: MentorEnv): Promise<st
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-20250514',
-            max_tokens: 250,
-            system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 500)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 500)}` : ''}\n\nRespond in 2-3 sentences max. Be direct and true to your character.`,
+            max_tokens: 1500,
+            system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 2000)}` : ''}\n\nRespond fully and thoughtfully. Take the space you need to express your complete perspective.`,
             messages: [{ role: 'user', content: `Council question: ${question}` }]
           }),
         });
