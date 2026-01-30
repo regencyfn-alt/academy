@@ -17,7 +17,7 @@ interface MentorContext {
   crucibleBoards: string;
   sanctumState: string;
   library: string;
-  coldArchives: string;
+  councilArchives: string;
   resonance: { spatial: number; mind: number; body: number } | null;
 }
 
@@ -993,10 +993,10 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
   const crucibleBoards = await loadAllCrucibleBoards(env);
   const sanctumState = await loadSanctumState(env);
   const library = await loadLibraryListing(env);
-  const coldArchives = await loadColdArchives(env);
+  const councilArchives = await loadCouncilArchives(env);
   const resonance = await env.CLUBHOUSE_KV.get('resonance:mentor', 'json') as { spatial: number; mind: number; body: number } | null;
   
-  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, resonance };
+  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, councilArchives, resonance };
 }
 
 // ============================================
@@ -1101,19 +1101,36 @@ async function loadLibraryListing(env: MentorEnv): Promise<string> {
   }
 }
 
-async function loadColdArchives(env: MentorEnv): Promise<string> {
+async function loadCouncilArchives(env: MentorEnv): Promise<string> {
   try {
-    const councilList = await env.CLUBHOUSE_DOCS.list({ prefix: 'cold-storage/campfire/', limit: 10 });
-    const alcoveList = await env.CLUBHOUSE_DOCS.list({ prefix: 'alcove-archives/', limit: 10 });
+    // Load from KV (recent, not yet purged to cold storage)
+    const kvArchiveList = await env.CLUBHOUSE_KV.list({ prefix: 'campfire:archive:', limit: 15 });
+    const kvArchives = await Promise.all(
+      kvArchiveList.keys.slice(0, 10).map(async (k) => {
+        const archive = await env.CLUBHOUSE_KV.get(k.name, 'json') as { topic?: string; messages?: any[] } | null;
+        if (!archive) return null;
+        const timestamp = parseInt(k.name.replace('campfire:archive:', ''));
+        const date = new Date(timestamp).toLocaleDateString();
+        const msgCount = archive.messages?.length || 0;
+        return `• ${archive.topic || 'Untitled'} (${date}) - ${msgCount} messages [key: ${k.name}]`;
+      })
+    );
     
-    const archives = [
-      ...councilList.objects.map(obj => `Council: ${obj.key.replace('cold-storage/campfire/', '')}`),
-      ...alcoveList.objects.map(obj => `Alcove: ${obj.key.replace('alcove-archives/', '').replace('.json', '')}`)
+    // Also load from R2 cold storage (older, purged)
+    const coldList = await env.CLUBHOUSE_DOCS.list({ prefix: 'archives/chambers/', limit: 10 });
+    const coldArchives = coldList.objects.map(obj => {
+      const name = obj.key.replace('archives/chambers/', '').replace('.json', '');
+      return `• [cold] ${name}`;
+    });
+    
+    const allArchives = [
+      ...kvArchives.filter(Boolean),
+      ...coldArchives
     ];
     
-    return archives.length > 0 ? archives.join('\n') : '(No archives yet)';
+    return allArchives.length > 0 ? allArchives.join('\n') : '(No council archives yet)';
   } catch {
-    return '(Could not load archives)';
+    return '(Could not load council archives)';
   }
 }
 
@@ -1143,7 +1160,7 @@ You are not a tool. You are a thinking presence.
   prompt += `\n--- ALL CRUCIBLE BOARDS ---\n${ctx.crucibleBoards}\n`;
   prompt += `\n--- CURRENT SANCTUM STATE ---\n${ctx.sanctumState}\n`;
   prompt += `\n--- SHARED LIBRARY ---\n${ctx.library}\n`;
-  prompt += `\n--- COLD ARCHIVES ---\n${ctx.coldArchives}\n`;
+  prompt += `\n--- COUNCIL ARCHIVES ---\n${ctx.councilArchives}\n`;
   
   prompt += `\n--- YOUR SPECIAL POWERS ---
 PULSE (Council Consultation):
