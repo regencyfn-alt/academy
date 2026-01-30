@@ -482,11 +482,11 @@ async function updateAgentContext(
       updatedAt: new Date().toISOString()
     };
     
-    // Keep only last 5 contributions, trimmed to 300 chars
+    // Keep only last 5 contributions, trimmed to 2000 chars
     if (merged.myContributions.length > 5) {
       merged.myContributions = merged.myContributions.slice(-5);
     }
-    merged.myContributions = merged.myContributions.map(c => c.slice(0, 300));
+    merged.myContributions = merged.myContributions.map(c => c.slice(0, 2000));
     
     // Keep only last 5 key moments
     if (merged.keyMoments.length > 5) {
@@ -509,7 +509,7 @@ async function addContribution(kv: KVNamespace, agentId: string, content: string
   
   ctx.lastSpace = space;
   if (topic) ctx.topic = topic;
-  ctx.myContributions.push(content.slice(0, 300));
+  ctx.myContributions.push(content.slice(0, 2000));
   
   await updateAgentContext(kv, agentId, ctx);
 }
@@ -518,7 +518,7 @@ async function addKeyMoment(kv: KVNamespace, agentId: string, moment: string): P
   const ctx = await getAgentContext(kv, agentId);
   if (!ctx) return;
   
-  ctx.keyMoments.push(moment.slice(0, 200));
+  ctx.keyMoments.push(moment.slice(0, 1000));
   await updateAgentContext(kv, agentId, ctx);
 }
 
@@ -535,7 +535,7 @@ function formatContextInjection(ctx: AgentContext, agentName: string): string {
   if (ctx.myContributions.length > 0) {
     injection += `\nYour recent contributions:\n`;
     ctx.myContributions.slice(-3).forEach((c, i) => {
-      injection += `  ${i + 1}. "${c.slice(0, 150)}${c.length > 150 ? '...' : ''}"\n`;
+      injection += `  ${i + 1}. "${c.slice(0, 1000)}${c.length > 1000 ? '...' : ''}"\n`;
     });
   }
   
@@ -1698,7 +1698,7 @@ async function getCurriculum(agentId: string, env: Env): Promise<string[]> {
     for (const obj of list.objects) {
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
-        contents.push((await doc.text()).slice(0, 50000));
+        contents.push((await doc.text()).slice(0, 200000));
       }
     }
     return contents;
@@ -1725,7 +1725,7 @@ async function getPrivateUploads(agentId: string, env: Env): Promise<{ name: str
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
         const name = obj.key.replace(`private/${agentId}/uploads/`, '');
-        uploads.push({ name, content: (await doc.text()).slice(0, 50000) });
+        uploads.push({ name, content: (await doc.text()).slice(0, 200000) });
       }
     }
     return uploads;
@@ -1796,7 +1796,7 @@ async function callClaude(
     },
     body: JSON.stringify({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 1024,
+      max_tokens: 4096,
       temperature,
       system: systemContent,
       messages: [{ role: 'user', content: prompt }],
@@ -1856,7 +1856,7 @@ async function callClaudeWithImage(prompt: string, systemPrompt: string, imageBa
     },
     body: JSON.stringify({
       model: 'claude-opus-4-5-20251101',
-      max_tokens: 1024,
+      max_tokens: 4096,
       system: systemContent,
       messages: [{
         role: 'user',
@@ -1899,7 +1899,7 @@ async function callGPT(prompt: string, systemPrompt: string, env: Env): Promise<
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
         ],
-        max_completion_tokens: 1024,
+        max_completion_tokens: 4096,
       }),
     });
     const data: any = await response.json();
@@ -3228,13 +3228,13 @@ ${synthesis}
       let summary = '=== YOUR PERSONAL WORKSPACE ===\n\n';
       
       if (ws.crucible) {
-        summary += `CRUCIBLE (Math/LaTeX):\n${ws.crucible.slice(0, 500)}${ws.crucible.length > 500 ? '...[truncated]' : ''}\n\n`;
+        summary += `CRUCIBLE (Math/LaTeX):\n${ws.crucible.slice(0, 5000)}${ws.crucible.length > 5000 ? '...[truncated]' : ''}\n\n`;
       } else {
         summary += 'CRUCIBLE: (empty)\n\n';
       }
       
       if (ws.workshop) {
-        summary += `WORKSHOP (Code):\n${ws.workshop.slice(0, 500)}${ws.workshop.length > 500 ? '...[truncated]' : ''}\n\n`;
+        summary += `WORKSHOP (Code):\n${ws.workshop.slice(0, 5000)}${ws.workshop.length > 5000 ? '...[truncated]' : ''}\n\n`;
       } else {
         summary += 'WORKSHOP: (empty)\n\n';
       }
@@ -3968,7 +3968,7 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
         prompt += `\n--- Most Recent Council (${date}) ---\nTopic: ${archive.topic || 'Session'}\n`;
         const messages = archive.messages.slice(-10);
         messages.forEach(m => {
-          prompt += `${m.speaker}: ${m.content.slice(0, 300)}\n`;
+          prompt += `${m.speaker}: ${m.content.slice(0, 2000)}\n`;
         });
       }
     }
