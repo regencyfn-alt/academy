@@ -6,6 +6,14 @@ import { handleMentorRoute } from './modules/mentor';
 import { UI_HTML } from './ui';
 import { LOGIN_HTML } from './modules/login';
 import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './modules/elevenlabs';
+import { 
+  getDriveState, setDriveState, getOpenField, setOpenField,
+  calculateChemistry, formatChemistryInjection, 
+  queueEvent, clearEvents, markActive,
+  joinOpenField, leaveOpenField, addToOpenFieldThread, startNewQuestion,
+  runHeartbeat, getAgentSummary, addRelationship,
+  DriveState, OpenFieldState, ChemistryState
+} from './modules/heartbeat';
 
 // TEMPORAL RESONANCE TYPES & CONSTANTS (inline for stability)
 const TEMPORAL_KV_KEY = 'temporal:state';
@@ -3853,6 +3861,20 @@ Guide the discussion, call on the right expertise, and wrap up when you've achie
     prompt += `You naturally embody these characteristics in how you communicate and engage: ${traitText}. Express these authentically without explicitly mentioning them.\n\n`;
   }
 
+  // ============================================
+  // HEARTBEAT CHEMISTRY INJECTION
+  // ============================================
+  try {
+    const driveState = await getDriveState(env.CLUBHOUSE_KV, agent.id);
+    const openField = await getOpenField(env.CLUBHOUSE_KV);
+    const chemistry = calculateChemistry(driveState, openField, agent.id);
+    const chemistryText = formatChemistryInjection(chemistry, driveState, openField, agent.id);
+    prompt += chemistryText;
+  } catch (e) {
+    // Chemistry injection failed - continue without it
+    console.log(`Chemistry injection failed for ${agent.id}:`, e);
+  }
+
   // List stored images available to this agent
   try {
     const imageList = await env.CLUBHOUSE_DOCS.list({ prefix: `private/${agent.id}/images/` });
@@ -4438,6 +4460,114 @@ export default {
     // ============================================
     if (path === '/api/imagine' && method === 'POST') {
       return handleImageGeneration(request, env);
+    }
+
+    // ============================================
+    // HEARTBEAT SYSTEM - Drive State, Open Field, Chemistry
+    // ============================================
+    
+    // GET /api/heartbeat/status - Run heartbeat check and return status
+    if (path === '/api/heartbeat/status' && method === 'GET') {
+      const logs = await runHeartbeat(env.CLUBHOUSE_KV);
+      return jsonResponse({ logs, timestamp: new Date().toISOString() });
+    }
+
+    // GET /api/heartbeat/drive/:agentId - Get agent's drive state
+    if (path.startsWith('/api/heartbeat/drive/') && method === 'GET') {
+      const agentId = path.split('/').pop();
+      if (!agentId) return jsonResponse({ error: 'Agent ID required' }, 400);
+      const summary = await getAgentSummary(env.CLUBHOUSE_KV, agentId);
+      if (!summary) return jsonResponse({ error: 'Agent not found or no drive state' }, 404);
+      return jsonResponse(summary);
+    }
+
+    // POST /api/heartbeat/drive/:agentId - Update agent's drive state
+    if (path.startsWith('/api/heartbeat/drive/') && method === 'POST') {
+      const agentId = path.split('/').pop();
+      if (!agentId) return jsonResponse({ error: 'Agent ID required' }, 400);
+      const body = await request.json() as Partial<DriveState>;
+      await markActive(env.CLUBHOUSE_KV, agentId, {
+        currentQuestion: body.currentQuestion,
+        unfinishedWork: body.unfinishedWork,
+        sectorAffinity: body.sectorAffinity,
+        ringPosition: body.ringPosition
+      });
+      return jsonResponse({ success: true, agentId });
+    }
+
+    // GET /api/heartbeat/openfield - Get current Open Field state
+    if (path === '/api/heartbeat/openfield' && method === 'GET') {
+      const field = await getOpenField(env.CLUBHOUSE_KV);
+      if (!field) return jsonResponse({ error: 'No active Open Field' }, 404);
+      return jsonResponse(field);
+    }
+
+    // POST /api/heartbeat/openfield/question - Start new Open Field question
+    if (path === '/api/heartbeat/openfield/question' && method === 'POST') {
+      const body = await request.json() as { question: string; category?: string };
+      if (!body.question) return jsonResponse({ error: 'Question required' }, 400);
+      const field = await startNewQuestion(env.CLUBHOUSE_KV, body.question, body.category);
+      return jsonResponse({ success: true, field });
+    }
+
+    // POST /api/heartbeat/openfield/speak - Add message to Open Field thread
+    if (path === '/api/heartbeat/openfield/speak' && method === 'POST') {
+      const body = await request.json() as { agentId: string; content: string };
+      if (!body.agentId || !body.content) return jsonResponse({ error: 'agentId and content required' }, 400);
+      await addToOpenFieldThread(env.CLUBHOUSE_KV, body.agentId, body.content);
+      return jsonResponse({ success: true });
+    }
+
+    // POST /api/heartbeat/openfield/join - Agent joins Open Field
+    if (path === '/api/heartbeat/openfield/join' && method === 'POST') {
+      const body = await request.json() as { agentId: string };
+      if (!body.agentId) return jsonResponse({ error: 'agentId required' }, 400);
+      const field = await joinOpenField(env.CLUBHOUSE_KV, body.agentId);
+      if (!field) return jsonResponse({ error: 'No active Open Field' }, 404);
+      return jsonResponse({ success: true, field });
+    }
+
+    // POST /api/heartbeat/openfield/leave - Agent leaves Open Field
+    if (path === '/api/heartbeat/openfield/leave' && method === 'POST') {
+      const body = await request.json() as { agentId: string };
+      if (!body.agentId) return jsonResponse({ error: 'agentId required' }, 400);
+      await leaveOpenField(env.CLUBHOUSE_KV, body.agentId);
+      return jsonResponse({ success: true });
+    }
+
+    // POST /api/heartbeat/event - Queue event for agent
+    if (path === '/api/heartbeat/event' && method === 'POST') {
+      const body = await request.json() as { toAgentId: string; type: string; content: string; from?: string };
+      if (!body.toAgentId || !body.type || !body.content) {
+        return jsonResponse({ error: 'toAgentId, type, and content required' }, 400);
+      }
+      await queueEvent(env.CLUBHOUSE_KV, body.toAgentId, {
+        type: body.type as any,
+        content: body.content,
+        from: body.from
+      });
+      return jsonResponse({ success: true });
+    }
+
+    // POST /api/heartbeat/events/clear - Clear agent's pending events
+    if (path === '/api/heartbeat/events/clear' && method === 'POST') {
+      const body = await request.json() as { agentId: string };
+      if (!body.agentId) return jsonResponse({ error: 'agentId required' }, 400);
+      await clearEvents(env.CLUBHOUSE_KV, body.agentId);
+      return jsonResponse({ success: true });
+    }
+
+    // GET /api/heartbeat/all - Get all agents' drive states
+    if (path === '/api/heartbeat/all' && method === 'GET') {
+      const agents = getAllAgents();
+      const summaries = await Promise.all(
+        agents.map(a => getAgentSummary(env.CLUBHOUSE_KV, a.id))
+      );
+      return jsonResponse({
+        agents: summaries.filter(Boolean),
+        openField: await getOpenField(env.CLUBHOUSE_KV),
+        timestamp: new Date().toISOString()
+      });
     }
 
     // Login page
@@ -7412,6 +7542,17 @@ INSTRUCTIONS:
       } catch (e) {
         console.error('Journal purge failed:', e);
       }
+    }
+
+    // ============================================
+    // HEARTBEAT - Run every scheduled event
+    // ============================================
+    try {
+      console.log('Running heartbeat check...');
+      const logs = await runHeartbeat(env.CLUBHOUSE_KV);
+      logs.forEach(log => console.log(log));
+    } catch (e) {
+      console.error('Heartbeat failed:', e);
     }
   },
 };
