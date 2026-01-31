@@ -3090,7 +3090,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     function populateLeaderSelect() {
       var select = document.getElementById('convene-leader');
       select.innerHTML = '<option value="">No leader (open session)</option>';
-      agents.forEach(function(a) {
+      agentsCache.forEach(function(a) {
         select.innerHTML += '<option value="' + a.id + '">' + (a.customName || a.name) + '</option>';
       });
     }
@@ -3098,7 +3098,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     function showAssignLeaderModal() {
       var select = document.getElementById('assign-leader-select');
       select.innerHTML = '<option value="">No leader (open session)</option>';
-      agents.forEach(function(a) {
+      agentsCache.forEach(function(a) {
         select.innerHTML += '<option value="' + a.id + '">' + (a.customName || a.name) + '</option>';
       });
       document.getElementById('assign-leader-modal').classList.add('active');
