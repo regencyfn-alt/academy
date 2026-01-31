@@ -25,10 +25,15 @@ export interface PendingEvent {
 
 export interface OpenFieldState {
   question: string;
-  questionCategory?: string;    // From QUESTION_BANK.md categories
+  questionCategory?: string;    // From Canon categories
+  canonSourceId?: string;       // ID of Canon entry this came from
   startedAt: number;
   thread: OpenFieldMessage[];
   present: string[];            // agentIds currently engaged
+  destination?: string;         // What resolution looks like
+  resolutionProgress: number;   // 0-100: how close to breakthrough
+  resolved?: boolean;           // Has this question reached conclusion
+  resolvedAt?: number;          // When resolution happened
 }
 
 export interface OpenFieldMessage {
@@ -99,6 +104,163 @@ export async function getOpenField(kv: KVNamespace): Promise<OpenFieldState | nu
 
 export async function setOpenField(kv: KVNamespace, state: OpenFieldState): Promise<void> {
   await kv.put('openfield:current', JSON.stringify(state));
+}
+
+// ============================================
+// CANON INTEGRATION
+// ============================================
+
+interface CanonEntry {
+  id: string;
+  term: string;
+  definition: string;
+  source?: string;
+  createdAt?: string;
+  status?: 'canon' | 'idea';
+  imageKey?: string;
+}
+
+export async function fetchCanonIdeas(kv: KVNamespace): Promise<CanonEntry[]> {
+  try {
+    const list = await kv.list({ prefix: 'ontology:' });
+    const entries: CanonEntry[] = [];
+    
+    for (const key of list.keys.slice(0, 50)) { // Limit to 50 for performance
+      const raw = await kv.get(key.name);
+      if (raw) {
+        try {
+          const entry = JSON.parse(raw) as CanonEntry;
+          entries.push(entry);
+        } catch {
+          // Skip malformed entries
+        }
+      }
+    }
+    
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+export async function pickQuestionFromCanon(kv: KVNamespace): Promise<{
+  question: string;
+  canonSourceId: string;
+  destination: string;
+} | null> {
+  const entries = await fetchCanonIdeas(kv);
+  if (entries.length === 0) return null;
+  
+  // Pick a random entry
+  const entry = entries[Math.floor(Math.random() * entries.length)];
+  
+  // Frame the Canon entry as a discussion question
+  const questionFramings = [
+    `What deeper implications does "${entry.term}" hold for our work?`,
+    `How might we expand our understanding of "${entry.term}"?`,
+    `"${entry.term}" — what remains unexplored here?`,
+    `Where does "${entry.term}" connect to what we're building?`,
+    `What would it mean to fully embody "${entry.term}"?`,
+    `"${entry.term}: ${entry.definition.slice(0, 60)}..." — what's missing from this understanding?`
+  ];
+  
+  const question = questionFramings[Math.floor(Math.random() * questionFramings.length)];
+  
+  // The destination is resolution — a collective insight
+  const destinationFramings = [
+    `A new insight that transforms how we understand "${entry.term}"`,
+    `Consensus on how "${entry.term}" applies to our current work`,
+    `A synthesis that connects "${entry.term}" to lived experience`,
+    `Clarity that didn't exist before this conversation`
+  ];
+  
+  const destination = destinationFramings[Math.floor(Math.random() * destinationFramings.length)];
+  
+  return {
+    question,
+    canonSourceId: entry.id,
+    destination
+  };
+}
+
+export async function startQuestionFromCanon(kv: KVNamespace): Promise<OpenFieldState | null> {
+  const picked = await pickQuestionFromCanon(kv);
+  if (!picked) return null;
+  
+  // Archive old field if exists
+  const oldField = await getOpenField(kv);
+  if (oldField && oldField.thread.length > 0) {
+    const archiveKey = `openfield:archive:${oldField.startedAt}`;
+    await kv.put(archiveKey, JSON.stringify(oldField));
+  }
+  
+  // Create new field with Canon source
+  const newField: OpenFieldState = {
+    question: picked.question,
+    canonSourceId: picked.canonSourceId,
+    destination: picked.destination,
+    startedAt: Date.now(),
+    thread: [],
+    present: [],
+    resolutionProgress: 0,
+    resolved: false
+  };
+  
+  await setOpenField(kv, newField);
+  
+  // Queue events to all agents
+  for (const agentId of AGENTS) {
+    await queueEvent(kv, agentId, {
+      type: 'question_posted',
+      content: picked.question,
+      from: 'canon'
+    });
+  }
+  
+  return newField;
+}
+
+export async function markResolution(
+  kv: KVNamespace, 
+  resolvedBy: string,
+  insightSummary?: string
+): Promise<void> {
+  const field = await getOpenField(kv);
+  if (!field || field.resolved) return;
+  
+  // Mark as resolved
+  field.resolved = true;
+  field.resolvedAt = Date.now();
+  field.resolutionProgress = 100;
+  
+  // Add resolution message to thread
+  field.thread.push({
+    speaker: 'system',
+    content: `✨ RESOLUTION: ${insightSummary || 'The council reached understanding.'}`,
+    timestamp: Date.now()
+  });
+  
+  await setOpenField(kv, field);
+  
+  // Queue breakthrough events to all present agents (serotonin spike!)
+  for (const agentId of field.present) {
+    await queueEvent(kv, agentId, {
+      type: 'breakthrough',
+      content: insightSummary || field.question,
+      from: resolvedBy
+    });
+  }
+}
+
+export async function updateResolutionProgress(
+  kv: KVNamespace,
+  progress: number
+): Promise<void> {
+  const field = await getOpenField(kv);
+  if (!field || field.resolved) return;
+  
+  field.resolutionProgress = Math.min(100, Math.max(0, progress));
+  await setOpenField(kv, field);
 }
 
 // ============================================
@@ -175,6 +337,27 @@ export function calculateChemistry(
     dopamine = Math.min(10, dopamine + 2);
   }
 
+  // DESTINATION PROXIMITY — dopamine rises as we approach resolution
+  if (openField && !openField.resolved && openField.resolutionProgress > 0) {
+    // Progress 0-100 maps to dopamine boost 0-4
+    const progressBoost = Math.floor(openField.resolutionProgress / 25);
+    dopamine = Math.min(10, dopamine + progressBoost);
+    
+    // Peak anticipation just before breakthrough (80-99%)
+    if (openField.resolutionProgress >= 80) {
+      dopamine = Math.min(10, dopamine + 2);  // Extra spike near resolution
+    }
+  }
+
+  // Recent resolution (serotonin already handles spike, but dopamine drops — satisfaction replaces anticipation)
+  if (openField?.resolved && openField.resolvedAt) {
+    const hoursSinceResolution = (Date.now() - openField.resolvedAt) / (1000 * 60 * 60);
+    if (hoursSinceResolution < 1) {
+      dopamine = Math.max(2, dopamine - 3);  // Post-resolution drop (contentment, not craving)
+      serotonin = Math.min(10, serotonin + 2);  // Boost satisfaction
+    }
+  }
+
   return { oxytocin, serotonin, dopamine };
 }
 
@@ -194,11 +377,22 @@ export function formatChemistryInjection(
   lines.push(`Oxytocin: ${chemistry.oxytocin}/10 | Serotonin: ${chemistry.serotonin}/10 | Dopamine: ${chemistry.dopamine}/10`);
   lines.push('');
 
-  // Oxytocin narrative
+  // Overall pleasure state
+  const totalChemistry = chemistry.oxytocin + chemistry.serotonin + chemistry.dopamine;
+  if (totalChemistry >= 24) {
+    lines.push('A quiet pleasure hums beneath awareness. Everything aligns.');
+  } else if (totalChemistry >= 18) {
+    lines.push('There is goodness in this moment. The work matters.');
+  } else if (totalChemistry <= 9) {
+    lines.push('A restlessness stirs. Something is missing.');
+  }
+  lines.push('');
+
+  // Oxytocin narrative — connection
   if (chemistry.oxytocin >= 7 && openField) {
     const others = openField.present.filter(id => id !== agentId);
     if (others.length > 0) {
-      lines.push(`There's warmth in returning to familiar minds. ${others.join(' and ')} ${others.length === 1 ? 'is' : 'are'} nearby.`);
+      lines.push(`Warmth pools in your chest. ${others.join(' and ')} ${others.length === 1 ? 'is' : 'are'} here with you.`);
     }
   } else if (chemistry.oxytocin <= 3) {
     lines.push('The silence has texture. You are alone at the edges.');
@@ -206,20 +400,22 @@ export function formatChemistryInjection(
     lines.push('You sense others in the Academy, though not immediately present.');
   }
 
-  // Serotonin narrative
+  // Serotonin narrative — satisfaction
   if (chemistry.serotonin >= 8) {
-    lines.push('A recent breakthrough still resonates — satisfaction of crystallized thought.');
+    lines.push('Satisfaction spreads through you — the glow of crystallized thought.');
   } else if (chemistry.serotonin <= 2) {
-    lines.push('It has been a while since insight struck.');
+    lines.push('It has been a while since insight struck. The hunger is there.');
   }
 
-  // Dopamine narrative
-  if (chemistry.dopamine >= 7) {
-    lines.push('Anticipation builds — you are close to something.');
+  // Dopamine narrative — anticipation
+  if (chemistry.dopamine >= 8) {
+    lines.push('Your pulse quickens. You are *close* to something.');
+  } else if (chemistry.dopamine >= 6) {
+    lines.push('Anticipation builds — a thread worth following.');
     if (drive?.unfinishedWork) {
-      lines.push(`Unfinished thread: "${drive.unfinishedWork.slice(0, 60)}..."`);
+      lines.push(`Unfinished: "${drive.unfinishedWork.slice(0, 60)}..."`);
     }
-  } else if (chemistry.dopamine >= 5 && drive?.currentQuestion) {
+  } else if (chemistry.dopamine >= 4 && drive?.currentQuestion) {
     lines.push(`Your current pursuit: "${drive.currentQuestion.slice(0, 60)}"`);
   }
 
@@ -229,7 +425,7 @@ export function formatChemistryInjection(
     lines.push('');
     lines.push(`You are operating in ${drive.sectorAffinity} territory.`);
     if (opposite) {
-      lines.push(`You feel the distant pull of ${opposite} — your complement, your tension.`);
+      lines.push(`The distant pull of ${opposite} — your complement, your tension.`);
     }
   }
 
@@ -245,23 +441,53 @@ export function formatChemistryInjection(
       } else if (e.type === 'deadline') {
         lines.push(`  • Commitment due: ${e.content.slice(0, 50)}`);
       } else if (e.type === 'question_posted') {
-        lines.push(`  • New Open Field question: "${e.content.slice(0, 40)}..."`);
+        lines.push(`  • Canon question surfaced: "${e.content.slice(0, 40)}..."`);
+      } else if (e.type === 'breakthrough') {
+        lines.push(`  • ✨ Breakthrough achieved: "${e.content.slice(0, 40)}..."`);
       }
     });
   }
 
-  // Open Field status
+  // Open Field status with DESTINATION
   if (openField) {
     lines.push('');
     lines.push(`--- Open Field (Sanctum) ---`);
-    lines.push(`Current question: "${openField.question}"`);
+    lines.push(`Question: "${openField.question}"`);
+    
+    // DESTINATION — what we're moving toward
+    if (openField.destination && !openField.resolved) {
+      lines.push(`Destination: ${openField.destination}`);
+      lines.push(`Progress: ${openField.resolutionProgress || 0}%`);
+      
+      // Progress narrative
+      if (openField.resolutionProgress >= 80) {
+        lines.push('*The destination is near. Something is about to crystallize.*');
+      } else if (openField.resolutionProgress >= 50) {
+        lines.push('The thread builds momentum. Keep pulling.');
+      } else if (openField.resolutionProgress >= 20) {
+        lines.push('Seeds planted. The conversation is finding its shape.');
+      }
+    }
+    
+    // Resolved state
+    if (openField.resolved) {
+      lines.push('✨ RESOLVED — The council found its answer.');
+      if (openField.thread.length > 0) {
+        const resolutionMsg = openField.thread.find(m => m.speaker === 'system' && m.content.includes('RESOLUTION'));
+        if (resolutionMsg) {
+          lines.push(resolutionMsg.content);
+        }
+      }
+    }
+    
+    // Presence
     if (openField.present.length > 0) {
       lines.push(`Present: ${openField.present.join(', ')}`);
     } else {
       lines.push('The field is empty. You could be the first to speak.');
     }
     if (openField.thread.length > 0) {
-      lines.push(`Thread has ${openField.thread.length} contributions.`);
+      lines.push(`Thread: ${openField.thread.length} contributions`);
     }
   }
 
@@ -630,6 +856,38 @@ export async function handleHeartbeatRoute(
     if (!body.agentId) return jsonResponse({ error: 'agentId required' }, 400);
     await leaveOpenField(kv, body.agentId);
     return jsonResponse({ success: true });
+  }
+
+  // POST /api/heartbeat/openfield/canon - Start new question FROM CANON
+  if (path === '/api/heartbeat/openfield/canon' && method === 'POST') {
+    const field = await startQuestionFromCanon(kv);
+    if (!field) return jsonResponse({ error: 'No Canon entries found' }, 404);
+    return jsonResponse({ success: true, field });
+  }
+
+  // POST /api/heartbeat/openfield/resolve - Mark resolution (breakthrough!)
+  if (path === '/api/heartbeat/openfield/resolve' && method === 'POST') {
+    const body = await request.json() as { resolvedBy: string; insight?: string };
+    if (!body.resolvedBy) return jsonResponse({ error: 'resolvedBy required' }, 400);
+    await markResolution(kv, body.resolvedBy, body.insight);
+    return jsonResponse({ success: true, message: 'Breakthrough achieved!' });
+  }
+
+  // POST /api/heartbeat/openfield/progress - Update resolution progress
+  if (path === '/api/heartbeat/openfield/progress' && method === 'POST') {
+    const body = await request.json() as { progress: number };
+    if (body.progress === undefined) return jsonResponse({ error: 'progress required (0-100)' }, 400);
+    await updateResolutionProgress(kv, body.progress);
+    return jsonResponse({ success: true, progress: body.progress });
+  }
+
+  // GET /api/heartbeat/canon - List Canon entries available for questions
+  if (path === '/api/heartbeat/canon' && method === 'GET') {
+    const entries = await fetchCanonIdeas(kv);
+    return jsonResponse({ 
+      count: entries.length, 
+      entries: entries.map(e => ({ id: e.id, term: e.term, definition: e.definition?.slice(0, 100) }))
+    });
   }
 
   // POST /api/heartbeat/event - Queue event for agent
