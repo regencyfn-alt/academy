@@ -530,6 +530,148 @@ export async function getAgentSummary(kv: KVNamespace, agentId: string): Promise
 }
 
 // ============================================
+// ROUTE HANDLER (Single hook for index.ts)
+// ============================================
+
+interface HeartbeatEnv {
+  CLUBHOUSE_KV: KVNamespace;
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function jsonResponse(data: any, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders }
+  });
+}
+
+export async function handleHeartbeatRoute(
+  path: string,
+  method: string,
+  request: Request,
+  env: HeartbeatEnv,
+  getAllAgentsFn?: () => { id: string }[]
+): Promise<Response | null> {
+  
+  // Only handle /api/heartbeat/* routes
+  if (!path.startsWith('/api/heartbeat')) return null;
+
+  const kv = env.CLUBHOUSE_KV;
+
+  // GET /api/heartbeat/status - Run heartbeat check
+  if (path === '/api/heartbeat/status' && method === 'GET') {
+    const logs = await runHeartbeat(kv);
+    return jsonResponse({ logs, timestamp: new Date().toISOString() });
+  }
+
+  // GET /api/heartbeat/drive/:agentId - Get agent's drive state
+  if (path.startsWith('/api/heartbeat/drive/') && method === 'GET') {
+    const agentId = path.split('/').pop();
+    if (!agentId) return jsonResponse({ error: 'Agent ID required' }, 400);
+    const summary = await getAgentSummary(kv, agentId);
+    if (!summary) return jsonResponse({ error: 'Agent not found or no drive state' }, 404);
+    return jsonResponse(summary);
+  }
+
+  // POST /api/heartbeat/drive/:agentId - Update agent's drive state
+  if (path.startsWith('/api/heartbeat/drive/') && method === 'POST') {
+    const agentId = path.split('/').pop();
+    if (!agentId) return jsonResponse({ error: 'Agent ID required' }, 400);
+    const body = await request.json() as Partial<DriveState>;
+    await markActive(kv, agentId, {
+      currentQuestion: body.currentQuestion,
+      unfinishedWork: body.unfinishedWork,
+      sectorAffinity: body.sectorAffinity,
+      ringPosition: body.ringPosition
+    });
+    return jsonResponse({ success: true, agentId });
+  }
+
+  // GET /api/heartbeat/openfield - Get current Open Field state
+  if (path === '/api/heartbeat/openfield' && method === 'GET') {
+    const field = await getOpenField(kv);
+    if (!field) return jsonResponse({ error: 'No active Open Field' }, 404);
+    return jsonResponse(field);
+  }
+
+  // POST /api/heartbeat/openfield/question - Start new Open Field question
+  if (path === '/api/heartbeat/openfield/question' && method === 'POST') {
+    const body = await request.json() as { question: string; category?: string };
+    if (!body.question) return jsonResponse({ error: 'Question required' }, 400);
+    const field = await startNewQuestion(kv, body.question, body.category);
+    return jsonResponse({ success: true, field });
+  }
+
+  // POST /api/heartbeat/openfield/speak - Add message to Open Field thread
+  if (path === '/api/heartbeat/openfield/speak' && method === 'POST') {
+    const body = await request.json() as { agentId: string; content: string };
+    if (!body.agentId || !body.content) return jsonResponse({ error: 'agentId and content required' }, 400);
+    await addToOpenFieldThread(kv, body.agentId, body.content);
+    return jsonResponse({ success: true });
+  }
+
+  // POST /api/heartbeat/openfield/join - Agent joins Open Field
+  if (path === '/api/heartbeat/openfield/join' && method === 'POST') {
+    const body = await request.json() as { agentId: string };
+    if (!body.agentId) return jsonResponse({ error: 'agentId required' }, 400);
+    const field = await joinOpenField(kv, body.agentId);
+    if (!field) return jsonResponse({ error: 'No active Open Field' }, 404);
+    return jsonResponse({ success: true, field });
+  }
+
+  // POST /api/heartbeat/openfield/leave - Agent leaves Open Field
+  if (path === '/api/heartbeat/openfield/leave' && method === 'POST') {
+    const body = await request.json() as { agentId: string };
+    if (!body.agentId) return jsonResponse({ error: 'agentId required' }, 400);
+    await leaveOpenField(kv, body.agentId);
+    return jsonResponse({ success: true });
+  }
+
+  // POST /api/heartbeat/event - Queue event for agent
+  if (path === '/api/heartbeat/event' && method === 'POST') {
+    const body = await request.json() as { toAgentId: string; type: string; content: string; from?: string };
+    if (!body.toAgentId || !body.type || !body.content) {
+      return jsonResponse({ error: 'toAgentId, type, and content required' }, 400);
+    }
+    await queueEvent(kv, body.toAgentId, {
+      type: body.type as any,
+      content: body.content,
+      from: body.from
+    });
+    return jsonResponse({ success: true });
+  }
+
+  // POST /api/heartbeat/events/clear - Clear agent's pending events
+  if (path === '/api/heartbeat/events/clear' && method === 'POST') {
+    const body = await request.json() as { agentId: string };
+    if (!body.agentId) return jsonResponse({ error: 'agentId required' }, 400);
+    await clearEvents(kv, body.agentId);
+    return jsonResponse({ success: true });
+  }
+
+  // GET /api/heartbeat/all - Get all agents' states
+  if (path === '/api/heartbeat/all' && method === 'GET') {
+    const agentIds = getAllAgentsFn ? getAllAgentsFn().map(a => a.id) : AGENTS;
+    const summaries = await Promise.all(
+      agentIds.map(id => getAgentSummary(kv, id))
+    );
+    return jsonResponse({
+      agents: summaries.filter(Boolean),
+      openField: await getOpenField(kv),
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // No match
+  return null;
+}
+
+// ============================================
 // EXPORTS FOR INDEX.TS INTEGRATION
 // ============================================
 
