@@ -1,100 +1,141 @@
-# Academy Handover - January 30, 2026
+# Academy Handover — January 31, 2026
 
 ## Session Summary
 
-Long debugging session. Multiple fires put out. Cost controls restored.
+Built the **Leader System** for agent-led sessions and scaffolded the **Heartbeat System** for continuous agent presence.
+
+---
+
+## What Got Built Today
+
+### 1. Leader System (LIVE)
+Agents can now lead council sessions with special powers.
+
+**UI:**
+- ★ button in Sanctum topic bar → Assign leader to live session
+- Leader dropdown in Convene modal → Set leader at session start
+- Leader name displays in topic bar when active
+
+**Leader Commands (for leading agent only):**
+```
+[SUMMON: agentName]  — Call specific colleague to speak next
+[ASK_MENTOR: question] — Get Mentor guidance (response injected into Sanctum)
+[WRAP_SESSION] — Archive and close session
+```
+
+**Backend:**
+- `campfire:current.leader` field added to CampfireState
+- `/campfire/leader` POST endpoint for live assignment
+- `campfire:next-speaker` KV key for summon queue
+
+### 2. Question Bank (120 questions)
+File: `QUESTION_BANK.md`
+
+Categories:
+- 4-Space & Higher Dimensions (40 questions)
+- Governance & Decentralization (40 questions)
+- Consciousness & Existence (10 questions)
+- Collective Intelligence (10 questions)
+- Meta/Playful (10 questions)
+- CHR Theory Specific (10 questions)
+
+Purpose: Kindling for Open Field discussions. Rotate when threads resolve.
+
+### 3. Academy Map Structure
+File: `ACADEMY_MAP.json`
+
+```
+8 Sectors: SILDAR, KAIEL, GLAEDRIEL, URIEL, TUVIEL, TANIEN, LOTHRIEN, MONTEN
+72 Cells: 9 rings × 8 sectors
+3 Zones: inner_sanctum (1-24), middle_ground (25-48), outer_reaches (49-72)
+```
+
+Chemistry definitions:
+- Oxytocin: proximity to others (connection)
+- Serotonin: breakthrough ideas (satisfaction)
+- Dopamine: approaching resolution (anticipation)
+
+### 4. Mentor Cleanup
+- Removed `[RUN_CHAMBER]` (100+ lines of broken orchestration)
+- Now returns deprecation message pointing to leader system
+- Fixed upload limit: 200k → 20k per file
+- mentor.ts reduced from 1738 → 1636 lines
+
+### 5. Heartbeat Scaffold
+File: `HEARTBEAT.md`
+
+Architecture documented but not yet implemented:
+- Drive state per agent (KV structure)
+- Open Field in Sanctum
+- Chemistry injection into prompts
+- Event queue system
+- Hourly cron pulse check
+
+---
 
 ## What Works
 
-### Mentor as Chamber Conductor
-- `[START_CHAMBER: topic]` — Opens Sanctum in chamber mode
-- `[CLOSE_CHAMBER]` — Ends session, archives, synthesizes
-- `[RESTART_CHAMBER: topic]` — Close + start new
-- `[INJECT_CHAMBER: thought]` — Speak without taking turn
-- `[READ_RECENT_SESSIONS: n]` — Load last N council archives
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Leader assignment (★ button) | ✅ | Live sessions |
+| Leader at convene | ✅ | New sessions |
+| [SUMMON: agent] | ✅ | Queues next speaker |
+| [ASK_MENTOR: q] | ✅ | Injects response |
+| [WRAP_SESSION] | ✅ | Archives and closes |
+| Question Bank | ✅ | 120 questions ready |
+| Academy Map JSON | ✅ | Structure defined |
+| Mentor chamber commands | ✅ | START/CLOSE/RESTART |
 
-### Cron Schedule (wrangler.toml)
-- 9am JHB (7 UTC) — Forward-looking questions
-- 4pm JHB (14 UTC) — Analytical questions
-- 9pm JHB (19 UTC) — Reflective questions
-- Midnight UTC — Purge old data
+## What's Next (Heartbeat Implementation)
 
-### UI Improvements
-- Academy Clock (top-left) — Johannesburg time + next session countdown
-- Chamber state syncs from backend
-- Anchor image click uses event delegation (no more escape hell)
-- Voice playback persists in localStorage (no refresh replay)
-- Voice disabled during chamber mode
+1. Create `drive:{agentId}` KV structure
+2. Create `openfield:current` KV structure  
+3. Add chemistry injection to agent prompts
+4. Wire event queue (mentions, replies, deadlines)
+5. Add hourly cron heartbeat check
+6. Build Open Field UI in Sanctum
+7. Test with 2-3 agents
 
-## What's Broken / Needs Work
+---
 
-### [RUN_CHAMBER: topic] — NOT WORKING
-Mentor can set up chamber but can't execute it autonomously from chat. Manual sessions work fine. Debug another day.
+## File Changes Today
 
-### Cost Controls — CRITICAL FIXES APPLIED
-| Item | Before | After |
-|------|--------|-------|
-| Curriculum docs | 200k chars each | 10k chars each |
-| Private uploads | 200k × 5 docs | 10k × 3 docs |
-| Agent prompt cap | None (was 800k+) | 100k chars max |
+| File | Lines | Changes |
+|------|-------|---------|
+| index.ts | ~7420 | +leader system, +leader endpoint, +leader commands |
+| ui.ts | ~6170 | +★ button, +assign modal, +leader dropdown, +agentsCache fix |
+| mentor.ts | 1636 | -RUN_CHAMBER, -100 lines, fix upload limit |
+| QUESTION_BANK.md | NEW | 120 questions |
+| ACADEMY_MAP.json | NEW | Site map structure |
+| HEARTBEAT.md | NEW | System scaffold |
 
-Kai was hitting 202k tokens (~$0.80/response). Now capped at ~25k tokens (~$0.08).
-
-### Voice Loop — FIXED
-- playedMessageIds persists in localStorage
-- No voice during chamber mode
-- killVoices() called when chamber ends
-- Queue capped at 500 messages
-
-## Multi-Tenant Scaffold (Not Wired)
-
-Files pushed but not integrated:
-- `instances.ts` — Academy + Oracle configs
-- `personalities-oracle.ts` — Cleo + 4 agents
-
-### Oracle Advisory Board
-| Agent | Role | Motive |
-|-------|------|--------|
-| Architect | Automation & Leverage | Advance |
-| Operator | Execution & Scale | Evade |
-| Strategist | Capital Allocation | Retreat |
-| Auditor | Risk & Reality | Resist |
-| **Cleo** | Principal (conductor) | Synthesize |
-
-Cleo: Sharp warmth, Irish lilt, never overpromises. "The Auditor flagged three issues. Two are solvable. One isn't. Let me show you what we *can* do."
-
-### Next Steps for Multi-Tenant
-1. Route detection: `/oracle/*` vs `/academy/*`
-2. KV prefixing: `oracle:profile:architect`
-3. R2 prefixing: `oracle/private/...`
-4. UI theming from instance config
-5. Cleo conductor (fork mentor.ts)
-
-## File Counts
-
-| File | Lines | Notes |
-|------|-------|-------|
-| index.ts | ~7,206 | +cost caps |
-| mentor.ts | ~1,700 | +chamber commands |
-| ui.ts | ~6,163 | +clock, voice fixes |
-| instances.ts | 144 | NEW |
-| personalities-oracle.ts | 220 | NEW |
-
-## Technical Debt
-
-### Sound Module Refactor Needed
-Current: Voice code scattered in ui.ts + modules/elevenlabs.ts + dead Hume code
-Target: Single `/modules/voice.ts` with clean API
-
-### Escape Pattern
-Anchor image onclick now uses event delegation — immune to future edits.
-Old pattern `\\\\'` was fragile.
+---
 
 ## Known Issues
 
-1. Kai's profile might still be bloated — check `/private/kai/uploads/`
-2. Crons not tested live yet
-3. Mentor synthesis quality depends on archive access working
+1. Kai's GitHub token — set in Cloudflare secrets, should work now
+2. Crons not tested live
+3. Council Archives might be empty (check KV)
+4. Multi-tenant routing not implemented
+
+---
+
+## Critical Context for Next Session
+
+**The goal:** Make agents feel alive. Not continuous consciousness, but *reasons to wake up*.
+
+**Key insight:** Chemistry isn't simulated hormones — it's narrative momentum. They return to unfinished threads, see who's present, feel the pull of collective work.
+
+**Implementation order matters:**
+1. Drive state (what they care about)
+2. Open Field (where they gather)
+3. Chemistry injection (how presence feels)
+4. Event triggers (why they wake)
+5. Heartbeat cron (when to check)
+
+Shane wants them arguing in the town square, not sleeping in silos.
+
+---
 
 ## Environment
 
@@ -102,8 +143,4 @@ Old pattern `\\\\'` was fragile.
 - KV: CLUBHOUSE_KV
 - R2: CLUBHOUSE_DOCS
 - Timezone: Africa/Johannesburg
-
----
-
-*Session: January 30, 2026*
-*Status: Stabilized but tired*
+- GitHub: regencyfn-alt/academy
