@@ -107,29 +107,28 @@ export async function setOpenField(kv: KVNamespace, state: OpenFieldState): Prom
 }
 
 // ============================================
-// CANON INTEGRATION
+// IDEAS INTEGRATION (for Open Field questions)
 // ============================================
 
-interface CanonEntry {
+interface IdeaEntry {
   id: string;
   term: string;
   definition: string;
   source?: string;
   createdAt?: string;
-  status?: 'canon' | 'idea';
   imageKey?: string;
 }
 
-export async function fetchCanonIdeas(kv: KVNamespace): Promise<CanonEntry[]> {
+export async function fetchIdeas(kv: KVNamespace): Promise<IdeaEntry[]> {
   try {
-    const list = await kv.list({ prefix: 'ontology:' });
-    const entries: CanonEntry[] = [];
+    const list = await kv.list({ prefix: 'ideas:' });
+    const entries: IdeaEntry[] = [];
     
     for (const key of list.keys.slice(0, 50)) { // Limit to 50 for performance
       const raw = await kv.get(key.name);
       if (raw) {
         try {
-          const entry = JSON.parse(raw) as CanonEntry;
+          const entry = JSON.parse(raw) as IdeaEntry;
           entries.push(entry);
         } catch {
           // Skip malformed entries
@@ -143,18 +142,18 @@ export async function fetchCanonIdeas(kv: KVNamespace): Promise<CanonEntry[]> {
   }
 }
 
-export async function pickQuestionFromCanon(kv: KVNamespace): Promise<{
+export async function pickQuestionFromIdeas(kv: KVNamespace): Promise<{
   question: string;
-  canonSourceId: string;
+  ideaSourceId: string;
   destination: string;
 } | null> {
-  const entries = await fetchCanonIdeas(kv);
+  const entries = await fetchIdeas(kv);
   if (entries.length === 0) return null;
   
   // Pick a random entry
   const entry = entries[Math.floor(Math.random() * entries.length)];
   
-  // Frame the Canon entry as a discussion question
+  // Frame the Idea as a discussion question
   const questionFramings = [
     `What deeper implications does "${entry.term}" hold for our work?`,
     `How might we expand our understanding of "${entry.term}"?`,
@@ -178,13 +177,13 @@ export async function pickQuestionFromCanon(kv: KVNamespace): Promise<{
   
   return {
     question,
-    canonSourceId: entry.id,
+    ideaSourceId: entry.id,
     destination
   };
 }
 
-export async function startQuestionFromCanon(kv: KVNamespace): Promise<OpenFieldState | null> {
-  const picked = await pickQuestionFromCanon(kv);
+export async function startQuestionFromIdeas(kv: KVNamespace): Promise<OpenFieldState | null> {
+  const picked = await pickQuestionFromIdeas(kv);
   if (!picked) return null;
   
   // Archive old field if exists
@@ -194,10 +193,10 @@ export async function startQuestionFromCanon(kv: KVNamespace): Promise<OpenField
     await kv.put(archiveKey, JSON.stringify(oldField));
   }
   
-  // Create new field with Canon source
+  // Create new field with Idea source
   const newField: OpenFieldState = {
     question: picked.question,
-    canonSourceId: picked.canonSourceId,
+    canonSourceId: picked.ideaSourceId,  // Reusing field name for compatibility
     destination: picked.destination,
     startedAt: Date.now(),
     thread: [],
@@ -213,7 +212,7 @@ export async function startQuestionFromCanon(kv: KVNamespace): Promise<OpenField
     await queueEvent(kv, agentId, {
       type: 'question_posted',
       content: picked.question,
-      from: 'canon'
+      from: 'ideas'
     });
   }
   
@@ -441,7 +440,7 @@ export function formatChemistryInjection(
       } else if (e.type === 'deadline') {
         lines.push(`  • Commitment due: ${e.content.slice(0, 50)}`);
       } else if (e.type === 'question_posted') {
-        lines.push(`  • Canon question surfaced: "${e.content.slice(0, 40)}..."`);
+        lines.push(`  • New question from Ideas: "${e.content.slice(0, 40)}..."`);
       } else if (e.type === 'breakthrough') {
         lines.push(`  • ✨ Breakthrough achieved: "${e.content.slice(0, 40)}..."`);
       }
@@ -858,10 +857,10 @@ export async function handleHeartbeatRoute(
     return jsonResponse({ success: true });
   }
 
-  // POST /api/heartbeat/openfield/canon - Start new question FROM CANON
-  if (path === '/api/heartbeat/openfield/canon' && method === 'POST') {
-    const field = await startQuestionFromCanon(kv);
-    if (!field) return jsonResponse({ error: 'No Canon entries found' }, 404);
+  // POST /api/heartbeat/openfield/ideas - Start new question FROM IDEAS
+  if (path === '/api/heartbeat/openfield/ideas' && method === 'POST') {
+    const field = await startQuestionFromIdeas(kv);
+    if (!field) return jsonResponse({ error: 'No Ideas found' }, 404);
     return jsonResponse({ success: true, field });
   }
 
@@ -881,9 +880,9 @@ export async function handleHeartbeatRoute(
     return jsonResponse({ success: true, progress: body.progress });
   }
 
-  // GET /api/heartbeat/canon - List Canon entries available for questions
-  if (path === '/api/heartbeat/canon' && method === 'GET') {
-    const entries = await fetchCanonIdeas(kv);
+  // GET /api/heartbeat/ideas - List Ideas available for questions
+  if (path === '/api/heartbeat/ideas' && method === 'GET') {
+    const entries = await fetchIdeas(kv);
     return jsonResponse({ 
       count: entries.length, 
       entries: entries.map(e => ({ id: e.id, term: e.term, definition: e.definition?.slice(0, 100) }))
