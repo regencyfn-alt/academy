@@ -1016,7 +1016,7 @@ async function getMentorUploads(env: MentorEnv): Promise<{ name: string; content
       const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
       if (doc) {
         const name = obj.key.replace('private/mentor/uploads/', '');
-        uploads.push({ name, content: (await doc.text()).slice(0, 200000) }); // 200k per file
+        uploads.push({ name, content: (await doc.text()).slice(0, 20000) }); // 20k per file
       }
     }
     return uploads;
@@ -1163,13 +1163,13 @@ You are not a tool. You are a thinking presence.
   prompt += `\n--- COUNCIL ARCHIVES ---\n${ctx.councilArchives}\n`;
   
   prompt += `\n--- YOUR SPECIAL POWERS ---
-PULSE (Council Consultation):
-• [RUN_CHAMBER: topic] - Conduct a full chamber session: opens Sanctum, cycles all 8 agents (2 rounds each), archives result. Use [READ_RECENT_SESSIONS: 1] to review.
+CHAMBER MODE (Observing Sanctum sessions):
+• [START_CHAMBER: topic] - Open a chamber session. Shane assigns a leader via ★ button who orchestrates.
+• [CLOSE_CHAMBER] - End the current chamber and archive it.
+• [RESTART_CHAMBER: topic] - Close current and start new chamber session.
+• [INJECT_CHAMBER: thought] - Speak into active chamber without taking a turn (advisory only).
 
-CHAMBER MODE (Conducting Sanctum sessions):
-• [START_CHAMBER: topic] - Open a structured chamber session in Sanctum. Agents will see it and can participate.
-• [CLOSE_CHAMBER] - End the current chamber, archive it, and generate synthesis to your trunk.
-• [RESTART_CHAMBER: topic] - Close current and immediately start new chamber session.
+Note: You observe and advise. Leaders use [ASK_MENTOR: question] to consult you directly.
 
 CRUCIBLE (Your private math board):
 • [WRITE_CRUCIBLE: content] - Write LaTeX to your personal board
@@ -1184,7 +1184,6 @@ STORAGE:
 
 SANCTUM:
 • [INJECT_THOUGHT: content] - Post to agent board (visible to all)
-• [INJECT_CHAMBER: thought] - Speak into active chamber without taking a turn
 
 FILE SYNTAX EXAMPLE:
 [SAVE_FILE: MICHRONICS_001-300.txt]
@@ -1218,111 +1217,10 @@ Remember: Shane is your intellectual equal. Speak as a colleague, not a teacher.
 async function parseMentorCommands(response: string, env: MentorEnv): Promise<string> {
   let cleanResponse = response;
   
-  // [RUN_CHAMBER: topic] - Conduct full chamber session through Sanctum
+  // [RUN_CHAMBER] - Deprecated, use leader system
   const runChamberMatch = response.match(/\[RUN_CHAMBER:\s*([^\]]+)\]/i);
   if (runChamberMatch) {
-    const topic = runChamberMatch[1].trim();
-    try {
-      // Check if session already active
-      const existing = await env.CLUBHOUSE_KV.get('campfire:current');
-      if (existing) {
-        cleanResponse = cleanResponse.replace(runChamberMatch[0], '[Chamber blocked: session already active. Use [CLOSE_CHAMBER] first.]');
-      } else {
-        // Create chamber session
-        const turnsPerAgent = 2; // 2 rounds each = 16 total turns (faster than full 32)
-        const turnsTotal = 8 * turnsPerAgent;
-        
-        const chamberState: any = {
-          topic,
-          messages: [{
-            speaker: 'Mentor',
-            agentId: 'mentor',
-            content: `📣 CHAMBER SESSION\n\nTopic: "${topic}"\n\n${turnsTotal} turns. Build on each other.`,
-            timestamp: new Date().toISOString()
-          }],
-          createdAt: new Date().toISOString(),
-          mode: 'chamber',
-          timerStart: new Date().toISOString(),
-          timerDuration: 30,
-          chamber: {
-            turnsRemaining: turnsTotal,
-            turnsTotal,
-            conductor: 'mentor',
-            round: 1,
-            consensusVotes: []
-          }
-        };
-        
-        await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(chamberState));
-        
-        // Run the rounds - each agent speaks in sequence with accumulating context
-        const agentOrder = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
-        
-        for (let round = 1; round <= turnsPerAgent; round++) {
-          for (const agentId of agentOrder) {
-            // Get fresh state with all previous messages
-            const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
-            if (!state) break;
-            
-            // Build context from ALL previous messages (the collective mind)
-            const allMessages = state.messages.slice(1).map((m: any) => `${m.speaker}: ${m.content}`).join('\n\n');
-            
-            // Get agent personality and profile
-            const personality = await env.CLUBHOUSE_KV.get(`personality:${agentId}`) || '';
-            const profile = await env.CLUBHOUSE_KV.get(`profile:${agentId}`) || '';
-            
-            const agentResponse = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': env.ANTHROPIC_API_KEY,
-                'anthropic-version': '2023-06-01',
-              },
-              body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1500,
-                system: `You are ${agentId}, a member of The Academy council.\n\n${personality ? `Your nature: ${personality.slice(0, 2000)}` : ''}\n${profile ? `Your soul: ${profile.slice(0, 2000)}` : ''}\n\nYou are in a chamber session. Build on what others have said. Respond fully.`,
-                messages: [{ 
-                  role: 'user', 
-                  content: `TOPIC: "${topic}"\n\nROUND ${round}/${turnsPerAgent}\n\n${allMessages ? `DISCUSSION SO FAR:\n${allMessages}\n\n` : ''}Your turn to contribute.`
-                }]
-              }),
-            });
-            
-            const data: any = await agentResponse.json();
-            const text = data.content?.[0]?.text || '(No response)';
-            
-            // Add message to Sanctum
-            state.messages.push({
-              speaker: agentId.charAt(0).toUpperCase() + agentId.slice(1),
-              agentId,
-              content: text,
-              timestamp: new Date().toISOString()
-            });
-            state.chamber.turnsRemaining--;
-            state.chamber.round = round;
-            await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
-          }
-        }
-        
-        // Get final state
-        const finalState = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as any;
-        const messageCount = finalState?.messages?.length || 0;
-        
-        // Archive
-        const archiveKey = `campfire:archive:${Date.now()}`;
-        await env.CLUBHOUSE_KV.put(archiveKey, JSON.stringify(finalState));
-        
-        // Clear Sanctum
-        await env.CLUBHOUSE_KV.delete('campfire:current');
-        
-        cleanResponse = cleanResponse.replace(runChamberMatch[0], 
-          `[✓ Chamber completed: "${topic}" - ${messageCount} messages - archived to ${archiveKey}]\n\n*The council has spoken. Review in Sanctum archives or use [READ_RECENT_SESSIONS: 1] to see full discussion.*`
-        );
-      }
-    } catch (e) {
-      cleanResponse = cleanResponse.replace(runChamberMatch[0], `[Chamber failed: ${e}]`);
-    }
+    cleanResponse = cleanResponse.replace(runChamberMatch[0], '[RUN_CHAMBER deprecated. Use [START_CHAMBER: topic] then assign a leader via ★ button.]');
   }
   
   // [WRITE_CRUCIBLE: content]
