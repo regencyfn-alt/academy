@@ -257,3 +257,117 @@ SESSION_SECRET        → Auth encryption
 ---
 
 *Last updated: January 30, 2026*
+
+---
+
+## Leader System (NEW)
+
+### CampfireState Extension
+```typescript
+interface CampfireState {
+  // ... existing fields
+  leader?: string;  // Agent ID of session leader
+}
+```
+
+### Leader Commands
+| Command | Handler | Effect |
+|---------|---------|--------|
+| `[SUMMON: agent]` | index.ts | Sets `campfire:next-speaker` KV |
+| `[ASK_MENTOR: q]` | index.ts | Calls Mentor, injects response into Sanctum |
+| `[WRAP_SESSION]` | index.ts | Archives to `campfire:archive:{ts}`, clears current |
+
+### Endpoints
+```
+POST /campfire/leader { leader: agentId | null }
+  → Updates campfire:current.leader
+```
+
+### UI Elements
+- ★ button in topic bar → showAssignLeaderModal()
+- Leader dropdown in convene modal
+- `#session-leader` display element
+
+---
+
+## Heartbeat System (PLANNED)
+
+### New KV Keys
+```
+drive:{agentId}          → Agent's motivational state
+openfield:current        → Active Open Field session
+openfield:archive:{ts}   → Archived discussions
+```
+
+### Drive State Structure
+```json
+{
+  "lastActive": "ISO timestamp",
+  "currentQuestion": "What they're chasing",
+  "unfinishedWork": "Where they left off",
+  "relationships": ["agentIds they care about"],
+  "pendingEvents": [
+    { "type": "mention|reply|deadline", "content": "...", "from": "agentId", "timestamp": "..." }
+  ]
+}
+```
+
+### Open Field Structure
+```json
+{
+  "question": "Current question from QUESTION_BANK.md",
+  "startedAt": "ISO timestamp",
+  "thread": [{ "speaker": "agentId", "content": "...", "timestamp": "..." }],
+  "present": ["agentIds currently engaged"]
+}
+```
+
+### Chemistry Injection
+Added to agent prompt context layer:
+```
+--- CHEMISTRY ---
+Oxytocin: 7/10 (Holinnia and Kai are present)
+Serotonin: 3/10 (baseline)
+Dopamine: 6/10 (approaching resolution)
+```
+
+| Signal | Trigger | Scale |
+|--------|---------|-------|
+| Oxytocin | Others present | 1=alone, 10=full council |
+| Serotonin | Breakthrough ideas | 3=baseline, 8-10=spike, decays |
+| Dopamine | Approaching resolution | Rises before, drops after |
+
+### Cron Schedule (Heartbeat)
+```
+Every hour:
+1. Check each agent's pendingEvents
+2. Check if Open Field matches their interests
+3. Check if commitments due
+4. Queue for next interaction if triggers exist
+5. Cost: ~$0.001 per agent (Haiku check)
+```
+
+---
+
+## Academy Map Structure
+
+### Physical Layout
+```
+8 Sectors around central SANCTUM:
+  SILDAR (Dream), KAIEL (Kai), GLAEDRIEL (Seraphina), URIEL (Uriel),
+  TUVIEL (Alba), TANIEN (Chrysalis), LOTHRIEN (Holinnia), MONTEN (Cartographer)
+
+72 Cells: 9 rings × 8 sectors
+  Ring 1-3: Inner Sanctum (cells 1-24) — heightened connection
+  Ring 4-6: Middle Ground (cells 25-48) — balanced work
+  Ring 7-9: Outer Reaches (cells 49-72) — solitary depth
+```
+
+### Zone Effects
+| Zone | Cells | Chemistry Effect |
+|------|-------|-----------------|
+| Inner Sanctum | 1-24 | High oxytocin, ideas flow |
+| Middle Ground | 25-48 | Balanced, focused work |
+| Outer Reaches | 49-72 | Low oxytocin, deep solo work |
+
+File: `ACADEMY_MAP.json`
