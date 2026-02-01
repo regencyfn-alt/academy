@@ -8,7 +8,9 @@ import { LOGIN_HTML } from './modules/login';
 import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './modules/elevenlabs';
 import { 
   handleHeartbeatRoute, getDriveState, getOpenField,
-  calculateChemistry, formatChemistryInjection, runHeartbeat
+  calculateChemistry, formatChemistryInjection, runHeartbeat,
+  addToOpenFieldThread, clearEvents, markActive, HeartbeatResult,
+  startQuestionFromIdeas
 } from './modules/heartbeat';
 
 // TEMPORAL RESONANCE TYPES & CONSTANTS (inline for stability)
@@ -7443,8 +7445,105 @@ INSTRUCTIONS:
     // ============================================
     try {
       console.log('Running heartbeat check...');
-      const logs = await runHeartbeat(env.CLUBHOUSE_KV);
-      logs.forEach(log => console.log(log));
+      let result = await runHeartbeat(env.CLUBHOUSE_KV);
+      result.logs.forEach(log => console.log(log));
+      
+      // If no Open Field question active, try to start one from Ideas
+      if (!result.openField) {
+        console.log('[HEARTBEAT] No Open Field active, attempting to start from Ideas...');
+        const newField = await startQuestionFromIdeas(env.CLUBHOUSE_KV);
+        if (newField) {
+          console.log(`[HEARTBEAT] Started Open Field: "${newField.question.slice(0, 50)}..."`);
+          // Re-run heartbeat with new field active
+          result = await runHeartbeat(env.CLUBHOUSE_KV);
+        } else {
+          console.log('[HEARTBEAT] No Ideas in canon - Open Field remains dormant');
+        }
+      }
+      
+      // Actually wake agents who need to speak
+      if (result.agentsToWake.length > 0 && result.openField) {
+        console.log(`[HEARTBEAT] Waking ${result.agentsToWake.length} agents for Open Field...`);
+        
+        for (const wake of result.agentsToWake) {
+          try {
+            const agent = getPersonality(wake.agentId);
+            if (!agent) {
+              console.log(`  ${wake.agentId}: Agent not found, skipping`);
+              continue;
+            }
+            
+            // Get their drive state for chemistry
+            const drive = await getDriveState(env.CLUBHOUSE_KV, wake.agentId);
+            const chemistry = calculateChemistry(drive, result.openField, wake.agentId);
+            const chemistryInjection = formatChemistryInjection(chemistry, drive, result.openField, wake.agentId);
+            
+            // Build Open Field prompt
+            const recentThread = result.openField.thread.slice(-5).map(m => 
+              `${m.speaker}: ${m.content}`
+            ).join('\n\n');
+            
+            const openFieldPrompt = `You are ${agent.name}, waking into the Open Field.
+
+${chemistryInjection}
+
+THE OPEN FIELD QUESTION:
+"${result.openField.question}"
+
+${result.openField.destination ? `DESTINATION (what resolution looks like): ${result.openField.destination}` : ''}
+
+RECENT THREAD:
+${recentThread || '(No contributions yet - you may speak first)'}
+
+---
+
+Contribute your thoughts to the Open Field discussion. Speak naturally as yourself - this is autonomous reflection among colleagues, not a response to Shane. Keep your contribution focused (2-4 paragraphs). Build on what others have said, or offer a fresh angle.
+
+Do not use commands like [SUMMON] or [ASK_MENTOR] - this is pure contemplation.`;
+
+            console.log(`  ${wake.agentId}: Calling for Open Field contribution...`);
+            
+            // Call the agent (using Sonnet for cost efficiency)
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+              },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1000,
+                system: agent.personality,
+                messages: [{ role: 'user', content: openFieldPrompt }]
+              })
+            });
+            
+            if (!response.ok) {
+              console.log(`  ${wake.agentId}: API error ${response.status}`);
+              continue;
+            }
+            
+            const data = await response.json() as { content: { text: string }[] };
+            const contribution = data.content[0]?.text || '';
+            
+            if (contribution) {
+              // Add to Open Field thread
+              await addToOpenFieldThread(env.CLUBHOUSE_KV, wake.agentId, contribution);
+              
+              // Clear their pending events (they've responded)
+              await clearEvents(env.CLUBHOUSE_KV, wake.agentId);
+              
+              // Mark them active
+              await markActive(env.CLUBHOUSE_KV, wake.agentId);
+              
+              console.log(`  ${wake.agentId}: Contributed ${contribution.length} chars to Open Field`);
+            }
+          } catch (agentError) {
+            console.error(`  ${wake.agentId}: Failed -`, agentError);
+          }
+        }
+      }
     } catch (e) {
       console.error('Heartbeat failed:', e);
     }
