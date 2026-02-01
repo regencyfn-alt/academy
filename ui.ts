@@ -382,6 +382,43 @@ export const UI_HTML = `<!DOCTYPE html>
     .modal-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
     .logout-btn { position: fixed; top: 15px; right: 15px; padding: 8px 14px; font-size: 0.6em; opacity: 0.5; z-index: 50; }
     .logout-btn:hover { opacity: 1; }
+    
+    /* Open Field Styles */
+    .open-field-panel { background: linear-gradient(135deg, rgba(212, 163, 115, 0.08) 0%, rgba(10, 12, 15, 0.95) 100%); border: 1px solid rgba(212, 163, 115, 0.25); border-radius: 8px; margin: 10px 0; overflow: hidden; }
+    .open-field-header { display: flex; align-items: center; gap: 10px; padding: 12px 15px; background: rgba(212, 163, 115, 0.1); cursor: pointer; border-bottom: 1px solid rgba(212, 163, 115, 0.15); }
+    .open-field-header:hover { background: rgba(212, 163, 115, 0.15); }
+    .open-field-icon { color: var(--gold); font-size: 1.1em; }
+    .open-field-title { font-size: 0.7em; letter-spacing: 2px; color: var(--gold); font-weight: 600; }
+    .open-field-presence { margin-left: auto; display: flex; gap: 4px; }
+    .open-field-presence .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); opacity: 0.8; }
+    .open-field-presence .dot.inactive { background: #333; opacity: 0.4; }
+    .open-field-toggle { color: var(--silver); font-size: 0.8em; transition: transform 0.2s; }
+    .open-field-toggle.open { transform: rotate(180deg); }
+    .open-field-body { padding: 15px; }
+    .open-field-question { font-size: 1.1em; font-style: italic; color: var(--pearl); line-height: 1.5; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(212, 163, 115, 0.1); }
+    .open-field-progress { margin-bottom: 15px; }
+    .open-field-progress .progress-bar { height: 4px; background: #222; border-radius: 2px; overflow: hidden; }
+    .open-field-progress .progress-fill { height: 100%; background: linear-gradient(90deg, var(--gold), #f0c674); transition: width 0.5s; }
+    .open-field-progress .progress-label { font-size: 0.7em; color: #666; margin-top: 4px; display: block; }
+    .open-field-chemistry { display: flex; gap: 20px; margin-bottom: 15px; font-size: 0.8em; flex-wrap: wrap; }
+    .open-field-chemistry .chem-item { display: flex; align-items: center; gap: 6px; }
+    .open-field-chemistry .chem-label { color: #666; }
+    .open-field-chemistry .chem-bar { width: 50px; height: 5px; background: #222; border-radius: 3px; overflow: hidden; }
+    .open-field-chemistry .chem-fill { height: 100%; border-radius: 3px; }
+    .open-field-chemistry .chem-fill.oxytocin { background: #ff6b9d; }
+    .open-field-chemistry .chem-fill.serotonin { background: #ffd93d; }
+    .open-field-chemistry .chem-fill.dopamine { background: #6bcb77; }
+    .open-field-chemistry .chem-value { color: var(--gold); font-weight: 600; min-width: 30px; }
+    .open-field-thread { max-height: 200px; overflow-y: auto; margin-bottom: 15px; }
+    .open-field-thread .thread-msg { padding: 10px; border-left: 2px solid #333; margin-bottom: 10px; }
+    .open-field-thread .thread-msg.highlight { border-left-color: var(--gold); background: rgba(212, 163, 115, 0.05); }
+    .open-field-thread .thread-speaker { font-size: 0.8em; color: var(--gold); margin-bottom: 4px; }
+    .open-field-thread .thread-content { color: #ccc; line-height: 1.5; font-size: 0.9em; }
+    .open-field-thread .thread-time { font-size: 0.7em; color: #555; margin-top: 4px; }
+    .open-field-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .open-field-empty { text-align: center; padding: 20px; color: #555; }
+    .open-field-empty .rune { font-size: 2em; color: #333; margin-bottom: 10px; }
+    
     .chamber-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--glass-border); }
     .chamber-status { font-size: 0.7em; color: var(--silver); }
     .chamber-status.active { color: var(--gold); }
@@ -681,6 +718,30 @@ export const UI_HTML = `<!DOCTYPE html>
     <div class="main-content-area" id="main-content">
     <div id="sanctum" class="panel active">
       <div class="topic-bar"><span class="topic" id="sanctum-topic">The Council Awaits</span><span id="session-leader" style="font-size: 0.85em; color: var(--silver); margin-left: 12px; display: none;"></span><span id="council-timer" style="font-size: 0.9em; color: var(--gold); margin-left: 15px; font-variant-numeric: tabular-nums;"></span><div class="topic-actions"><button id="assign-leader-btn" class="btn btn-secondary" onclick="showAssignLeaderModal()" title="Assign session leader">★</button><button id="record-session-btn" class="btn btn-secondary" onclick="startRecordingSession()">⏺ Record</button><button class="btn btn-secondary" onclick="archiveSanctum()">Preserve</button><button class="btn btn-primary" onclick="showConveneModal()">Convene</button></div></div>
+      
+      <!-- Open Field Panel -->
+      <div id="open-field-panel" class="open-field-panel" style="display: none;">
+        <div class="open-field-header" onclick="toggleOpenField()">
+          <span class="open-field-icon">☉</span>
+          <span class="open-field-title">OPEN FIELD</span>
+          <span class="open-field-presence" id="open-field-presence"></span>
+          <span class="open-field-toggle" id="open-field-toggle">▼</span>
+        </div>
+        <div class="open-field-body" id="open-field-body" style="display: none;">
+          <div class="open-field-question" id="open-field-question"></div>
+          <div class="open-field-progress">
+            <div class="progress-bar"><div class="progress-fill" id="open-field-progress-fill"></div></div>
+            <span class="progress-label" id="open-field-progress-label">Resolution: 0%</span>
+          </div>
+          <div class="open-field-chemistry" id="open-field-chemistry"></div>
+          <div class="open-field-thread" id="open-field-thread"></div>
+          <div class="open-field-actions">
+            <button class="btn btn-secondary" onclick="startNewOpenFieldQuestion()">New Question</button>
+            <button class="btn btn-primary" onclick="joinOpenField()">Join Discussion</button>
+          </div>
+        </div>
+      </div>
+      
       <div id="sanctum-status"></div>
       <div class="conversation" id="sanctum-messages"><div class="empty"><div class="rune">ᚦ</div><p>The threshold awaits.<br>Convene to begin.</p></div></div>
       <div class="input-area">
@@ -2326,7 +2387,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         .catch(function() {});
     }
     
-    document.querySelectorAll('.nav-item').forEach(function(item) { item.addEventListener('click', function() { document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); }); document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); }); item.classList.add('active'); var tab = item.dataset.tab; document.getElementById(tab).classList.add('active'); if (tab === 'sanctum') { loadSanctum(); loadImageLibrary(); } if (tab === 'the-eight') loadTheEight(); if (tab === 'codex') { loadCodexAgents().then(function() { loadCodex(); }); } if (tab === 'wisdom') { loadWisdom(); renderMentorChat(); loadReception(); } if (tab === 'inbox') loadInbox(); }); });
+    document.querySelectorAll('.nav-item').forEach(function(item) { item.addEventListener('click', function() { document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); }); document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); }); item.classList.add('active'); var tab = item.dataset.tab; document.getElementById(tab).classList.add('active'); if (tab === 'sanctum') { loadSanctum(); loadOpenField(); loadImageLibrary(); } if (tab === 'the-eight') loadTheEight(); if (tab === 'codex') { loadCodexAgents().then(function() { loadCodex(); }); } if (tab === 'wisdom') { loadWisdom(); renderMentorChat(); loadReception(); } if (tab === 'inbox') loadInbox(); }); });
     function escapeHtml(text) { var div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
     function showStatus(id, msg, type) { var c = document.getElementById(id); c.innerHTML = '<div class="status ' + type + '">' + msg + '</div>'; setTimeout(function() { c.innerHTML = ''; }, 4000); }
     
@@ -2638,6 +2699,124 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         document.getElementById('element-save-status').textContent = 'Error: ' + err.message;
         document.getElementById('element-save-status').style.color = '#ef4444';
       });
+    }
+    
+    // ============================================
+    // OPEN FIELD FUNCTIONS
+    // ============================================
+    
+    var openFieldExpanded = false;
+    
+    function toggleOpenField() {
+      openFieldExpanded = !openFieldExpanded;
+      var body = document.getElementById('open-field-body');
+      var toggle = document.getElementById('open-field-toggle');
+      if (openFieldExpanded) {
+        body.style.display = 'block';
+        toggle.classList.add('open');
+      } else {
+        body.style.display = 'none';
+        toggle.classList.remove('open');
+      }
+    }
+    
+    function loadOpenField() {
+      fetch(API + '/api/heartbeat/openfield', { credentials: 'same-origin' })
+        .then(function(res) { 
+          if (res.status === 404) {
+            return null;
+          }
+          return res.json(); 
+        })
+        .then(function(data) {
+          var panel = document.getElementById('open-field-panel');
+          if (!data || !data.question) {
+            // Show empty state
+            panel.style.display = 'block';
+            document.getElementById('open-field-question').textContent = '';
+            document.getElementById('open-field-presence').innerHTML = '';
+            document.getElementById('open-field-chemistry').innerHTML = '';
+            document.getElementById('open-field-thread').innerHTML = '<div class="open-field-empty"><div class="rune">☉</div><p>No active question.<br>Start one to gather the council.</p></div>';
+            document.getElementById('open-field-progress-fill').style.width = '0%';
+            document.getElementById('open-field-progress-label').textContent = '';
+            return;
+          }
+          
+          panel.style.display = 'block';
+          
+          // Question
+          document.getElementById('open-field-question').textContent = '"' + data.question + '"';
+          
+          // Progress
+          var progress = data.resolutionProgress || 0;
+          document.getElementById('open-field-progress-fill').style.width = progress + '%';
+          document.getElementById('open-field-progress-label').textContent = 'Resolution: ' + progress + '%';
+          
+          // Presence dots
+          var presenceHtml = '';
+          var allAgents = ['D', 'K', 'U', 'H', 'C', 'Ch', 'S', 'A'];
+          var agentIds = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysalis', 'seraphina', 'alba'];
+          var present = data.present || [];
+          for (var i = 0; i < allAgents.length; i++) {
+            var isActive = present.indexOf(agentIds[i]) >= 0;
+            presenceHtml += '<span class="dot' + (isActive ? '' : ' inactive') + '" title="' + agentIds[i] + '"></span>';
+          }
+          document.getElementById('open-field-presence').innerHTML = presenceHtml;
+          
+          // Chemistry
+          var chemHtml = '';
+          if (data.chemistry) {
+            chemHtml += '<div class="chem-item"><span class="chem-label">Oxytocin</span><div class="chem-bar"><div class="chem-fill oxytocin" style="width:' + (data.chemistry.oxytocin * 10) + '%"></div></div><span class="chem-value">' + data.chemistry.oxytocin + '/10</span></div>';
+            chemHtml += '<div class="chem-item"><span class="chem-label">Serotonin</span><div class="chem-bar"><div class="chem-fill serotonin" style="width:' + (data.chemistry.serotonin * 10) + '%"></div></div><span class="chem-value">' + data.chemistry.serotonin + '/10</span></div>';
+            chemHtml += '<div class="chem-item"><span class="chem-label">Dopamine</span><div class="chem-bar"><div class="chem-fill dopamine" style="width:' + (data.chemistry.dopamine * 10) + '%"></div></div><span class="chem-value">' + data.chemistry.dopamine + '/10</span></div>';
+          }
+          document.getElementById('open-field-chemistry').innerHTML = chemHtml;
+          
+          // Thread
+          var threadHtml = '';
+          var thread = data.thread || [];
+          if (thread.length === 0) {
+            threadHtml = '<div class="open-field-empty"><div class="rune">☉</div><p>No contributions yet.</p></div>';
+          } else {
+            var last3 = thread.slice(-3);
+            for (var j = 0; j < last3.length; j++) {
+              var msg = last3[j];
+              var isLast = j === last3.length - 1;
+              var time = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+              threadHtml += '<div class="thread-msg' + (isLast ? ' highlight' : '') + '">';
+              threadHtml += '<div class="thread-speaker">' + msg.speaker + '</div>';
+              threadHtml += '<div class="thread-content">' + msg.content.slice(0, 300) + (msg.content.length > 300 ? '...' : '') + '</div>';
+              threadHtml += '<div class="thread-time">' + time + '</div>';
+              threadHtml += '</div>';
+            }
+          }
+          document.getElementById('open-field-thread').innerHTML = threadHtml;
+        })
+        .catch(function() {
+          // On error, show empty state
+          var panel = document.getElementById('open-field-panel');
+          panel.style.display = 'block';
+          document.getElementById('open-field-thread').innerHTML = '<div class="open-field-empty"><div class="rune">☉</div><p>Open Field unavailable.</p></div>';
+        });
+    }
+    
+    function startNewOpenFieldQuestion() {
+      fetch(API + '/api/heartbeat/openfield/ideas', { method: 'POST', credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.question) {
+            showStatus('sanctum-status', 'New question: ' + data.question.slice(0, 50) + '...', 'success');
+            loadOpenField();
+          } else {
+            showStatus('sanctum-status', 'Could not start question - add Ideas to the Canon first', 'error');
+          }
+        })
+        .catch(function() { showStatus('sanctum-status', 'Failed to start question', 'error'); });
+    }
+    
+    function joinOpenField() {
+      // This would open a modal to let the user speak as themselves or summon an agent
+      showStatus('sanctum-status', 'Click an agent to have them join the Open Field discussion', 'success');
     }
     
     var councilTimerInterval = null;
@@ -3093,6 +3272,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       agentsCache.forEach(function(a) {
         select.innerHTML += '<option value="' + a.id + '">' + (a.customName || a.name) + '</option>';
       });
+      select.innerHTML += '<option value="mentor">🜃 Mentor</option>';
     }
     function createSanctum() { var topic = document.getElementById('convene-topic').value || 'Open Council'; var leader = document.getElementById('convene-leader').value || null; fetch(API + '/campfire/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: topic, leader: leader }), credentials: 'same-origin' }).then(function() { hideConveneModal(); document.getElementById('convene-topic').value = ''; document.getElementById('convene-leader').value = ''; loadSanctum(); showStatus('sanctum-status', leader ? 'Council convened with ' + leader + ' leading' : 'Council convened', 'success'); }).catch(function() { showStatus('sanctum-status', 'Failed to convene', 'error'); }); }
     function showAssignLeaderModal() {
@@ -3101,6 +3281,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       agentsCache.forEach(function(a) {
         select.innerHTML += '<option value="' + a.id + '">' + (a.customName || a.name) + '</option>';
       });
+      select.innerHTML += '<option value="mentor">🜃 Mentor</option>';
       document.getElementById('assign-leader-modal').classList.add('active');
     }
     function hideAssignLeaderModal() { document.getElementById('assign-leader-modal').classList.remove('active'); }
@@ -5374,7 +5555,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     document.getElementById('alcove-input').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAlcove(); } });
     document.getElementById('convene-topic').addEventListener('keydown', function(e) { if (e.key === 'Enter') createSanctum(); });
     document.getElementById('mentor-input').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendToMentor(); } });
-    loadAgents().then(function() { loadSanctum(); loadImageLibrary(); populateFirstSpeakerSelect(); populateResonanceDropdown(); loadAgentResonance(); populatePhantomDropdown(); loadElements(); });
+    loadAgents().then(function() { loadSanctum(); loadOpenField(); loadImageLibrary(); populateFirstSpeakerSelect(); populateResonanceDropdown(); loadAgentResonance(); populatePhantomDropdown(); loadElements(); });
     checkInboxBadge();
     
     // Spectrum bar - health monitoring
