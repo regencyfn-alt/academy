@@ -662,62 +662,79 @@ export async function startNewQuestion(
 // HEARTBEAT CRON HANDLER
 // ============================================
 
-export async function runHeartbeat(kv: KVNamespace): Promise<string[]> {
+export interface HeartbeatResult {
+  logs: string[];
+  agentsToWake: { agentId: string; triggers: string[]; openFieldActive: boolean }[];
+  openField: OpenFieldState | null;
+}
+
+export async function runHeartbeat(kv: KVNamespace): Promise<HeartbeatResult> {
   const logs: string[] = [];
+  const agentsToWake: { agentId: string; triggers: string[]; openFieldActive: boolean }[] = [];
+  
   logs.push(`[HEARTBEAT] Running at ${new Date().toISOString()}`);
 
-  for (const agentId of AGENTS) {
-    const drive = await getDriveState(kv, agentId);
-    
-    if (!drive) {
-      logs.push(`  ${agentId}: No drive state (dormant)`);
-      continue;
-    }
-
-    // Check for triggers
-    const triggers: string[] = [];
-
-    // 1. Pending events?
-    if (drive.pendingEvents.length > 0) {
-      triggers.push(`${drive.pendingEvents.length} pending events`);
-    }
-
-    // 2. Unfinished work aging?
-    if (drive.unfinishedWork && drive.lastActive) {
-      const hoursSince = (Date.now() - drive.lastActive) / (1000 * 60 * 60);
-      if (hoursSince > 12 && hoursSince < 48) {
-        triggers.push('unfinished work aging');
-      }
-    }
-
-    // 3. Deadline approaching?
-    const deadlineEvent = drive.pendingEvents.find(e => e.type === 'deadline');
-    if (deadlineEvent) {
-      triggers.push('deadline pending');
-    }
-
-    if (triggers.length > 0) {
-      logs.push(`  ${agentId}: Active triggers - ${triggers.join(', ')}`);
-    } else {
-      logs.push(`  ${agentId}: Sleeping (no triggers)`);
-    }
-  }
-
-  // Check Open Field status
+  // Check Open Field first
   const field = await getOpenField(kv);
+  const openFieldActive = !!field;
+  
   if (field) {
     const ageHours = (Date.now() - field.startedAt) / (1000 * 60 * 60);
-    logs.push(`[OPEN FIELD] Question: "${field.question.slice(0, 40)}..." | Age: ${ageHours.toFixed(1)}h | Present: ${field.present.length} | Thread: ${field.thread.length}`);
-    
-    // If question is old (>24h) and thread is quiet, might be time for new question
-    if (ageHours > 24 && field.thread.length < 3) {
-      logs.push('  → Question may need refresh');
-    }
+    logs.push(`[OPEN FIELD] "${field.question.slice(0, 40)}..." | ${ageHours.toFixed(1)}h | ${field.present.length} present | ${field.thread.length} msgs`);
   } else {
     logs.push('[OPEN FIELD] No active question');
   }
 
-  return logs;
+  for (const agentId of AGENTS) {
+    const drive = await getDriveState(kv, agentId);
+    const triggers: string[] = [];
+
+    // Even without drive state, can be drawn to Open Field
+    if (field && !field.present.includes(agentId)) {
+      // Random chance to join (30% per heartbeat if not present)
+      if (Math.random() < 0.3) {
+        triggers.push('drawn to Open Field');
+      }
+    }
+
+    // If they're present in Open Field, check if they should contribute
+    if (field && field.present.includes(agentId)) {
+      const lastSpoke = field.thread.filter(m => m.speaker === agentId).slice(-1)[0];
+      const hoursSinceSpoke = lastSpoke ? (Date.now() - lastSpoke.timestamp) / (1000 * 60 * 60) : 999;
+      if (hoursSinceSpoke > 2) {
+        triggers.push('Open Field turn');
+      }
+    }
+
+    // Drive-dependent triggers (only if drive state exists)
+    if (drive) {
+      if (drive.pendingEvents.length > 0) {
+        triggers.push(`${drive.pendingEvents.length} events`);
+      }
+      
+      if (drive.unfinishedWork && drive.lastActive) {
+        const hoursSince = (Date.now() - drive.lastActive) / (1000 * 60 * 60);
+        if (hoursSince > 12 && hoursSince < 48) {
+          triggers.push('unfinished work');
+        }
+      }
+    }
+
+    if (triggers.length > 0) {
+      logs.push(`  ${agentId}: WAKING - ${triggers.join(', ')}`);
+      agentsToWake.push({ agentId, triggers, openFieldActive });
+    } else {
+      logs.push(`  ${agentId}: sleeping${drive ? '' : ' (no drive)'}`);
+    }
+  }
+
+  // Limit to 2 agents per heartbeat (cost control)
+  const selected = agentsToWake.slice(0, 2);
+  if (agentsToWake.length > 2) {
+    logs.push(`[THROTTLE] ${agentsToWake.length} want to wake, selected ${selected.length}`);
+  }
+
+  return { logs, agentsToWake: selected, openField: field };
 }
 
 // ============================================
