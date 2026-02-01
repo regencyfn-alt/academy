@@ -806,8 +806,13 @@ export async function handleHeartbeatRoute(
 
   // GET /api/heartbeat/status - Run heartbeat check
   if (path === '/api/heartbeat/status' && method === 'GET') {
-    const logs = await runHeartbeat(kv);
-    return jsonResponse({ logs, timestamp: new Date().toISOString() });
+    const result = await runHeartbeat(kv);
+    return jsonResponse({ 
+      logs: result.logs, 
+      agentsToWake: result.agentsToWake,
+      openFieldActive: !!result.openField,
+      timestamp: new Date().toISOString() 
+    });
   }
 
   // GET /api/heartbeat/drive/:agentId - Get agent's drive state
