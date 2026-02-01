@@ -373,7 +373,6 @@ export function formatChemistryInjection(
   const lines: string[] = [];
   
   lines.push('--- INNER STATE ---');
-  lines.push(`Oxytocin: ${chemistry.oxytocin}/10 | Serotonin: ${chemistry.serotonin}/10 | Dopamine: ${chemistry.dopamine}/10`);
   lines.push('');
 
   // Overall pleasure state
