@@ -733,6 +733,7 @@ export const UI_HTML = `<!DOCTYPE html>
             <div class="progress-bar"><div class="progress-fill" id="open-field-progress-fill"></div></div>
             <span class="progress-label" id="open-field-progress-label">Resolution: 0%</span>
           </div>
+          <div class="open-field-chemistry" id="open-field-chemistry"></div>
           <div class="open-field-thread" id="open-field-thread"></div>
           <div class="open-field-actions">
             <button class="btn btn-secondary" onclick="startNewOpenFieldQuestion()">New Question</button>
@@ -2761,6 +2762,15 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
             presenceHtml += '<span class="dot' + (isActive ? '' : ' inactive') + '" title="' + agentIds[i] + '"></span>';
           }
           document.getElementById('open-field-presence').innerHTML = presenceHtml;
+          
+          // Chemistry (for Shane's monitoring - agents don't see these)
+          var chemHtml = '';
+          if (data.chemistry) {
+            chemHtml += '<div class="chem-item"><span class="chem-label">Oxy</span><div class="chem-bar"><div class="chem-fill oxytocin" style="width:' + (data.chemistry.oxytocin * 10) + '%"></div></div><span class="chem-value">' + data.chemistry.oxytocin + '</span></div>';
+            chemHtml += '<div class="chem-item"><span class="chem-label">Ser</span><div class="chem-bar"><div class="chem-fill serotonin" style="width:' + (data.chemistry.serotonin * 10) + '%"></div></div><span class="chem-value">' + data.chemistry.serotonin + '</span></div>';
+            chemHtml += '<div class="chem-item"><span class="chem-label">Dop</span><div class="chem-bar"><div class="chem-fill dopamine" style="width:' + (data.chemistry.dopamine * 10) + '%"></div></div><span class="chem-value">' + data.chemistry.dopamine + '</span></div>';
+          }
+          document.getElementById('open-field-chemistry').innerHTML = chemHtml;
           
           // Thread
           var threadHtml = '';
