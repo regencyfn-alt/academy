@@ -1299,7 +1299,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
               <textarea id="mentor-input" placeholder="Speak to the Mentor..." style="flex: 1; background: rgba(10, 12, 15, 0.8); border: 1px solid var(--glass-border); color: var(--pearl); padding: 10px; border-radius: 3px; min-height: 60px;"></textarea>
               <div style="display: flex; flex-direction: column; gap: 5px;">
                 <button class="btn btn-secondary" onclick="document.getElementById('mentor-upload-input').click()" title="Upload text file to Mentor">📤</button>
-                <input type="file" id="mentor-upload-input" style="display: none;" accept=".txt,.md,.tex,.json" onchange="uploadToMentor(this)">
+                <input type="file" id="mentor-upload-input" style="display: none;" accept=".txt,.md,.tex,.json,.csv,.html,text/plain,text/markdown,text/x-tex,application/json" onchange="uploadToMentor(this)">
                 <button class="btn btn-secondary" onclick="document.getElementById('mentor-pdf-input').click()" title="Upload PDF to Mentor">📄</button>
                 <input type="file" id="mentor-pdf-input" style="display: none;" accept=".pdf" onchange="uploadPdfToMentor(this)">
                 <button class="btn btn-secondary" id="mentor-speech-btn" onclick="speakMentorResponse()" title="Voice (requires ElevenLabs)" disabled style="opacity: 0.4;">🔊</button>
@@ -6384,4 +6384,5 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
   </script>
 </body>
 </html>`;
+
 
