@@ -2512,10 +2512,20 @@ async function parseAgentCommands(agentId: string, response: string, env: Env): 
     }
   }
   
-  // [MENTOR_QUESTION: question] - DEPRECATED: Mentor system removed
+  // [MENTOR_QUESTION: question] - Route question to Mentor system
   const mentorQuestionMatch = response.match(/\[MENTOR_QUESTION:\s*([^\]]+)\]/i);
   if (mentorQuestionMatch) {
-    cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Mentor system has been retired. Use Semantic Scholar for research.]');
+    const question = mentorQuestionMatch[1].trim();
+    try {
+      await env.CLUBHOUSE_KV.put('mentor-pending-question', JSON.stringify({
+        from: agent?.id || 'unknown',
+        question: question,
+        timestamp: new Date().toISOString()
+      }));
+      cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], `[Question sent to Mentor: "${question}"]`);
+    } catch {
+      cleanResponse = cleanResponse.replace(mentorQuestionMatch[0], '[Could not reach Mentor]');
+    }
   }
   
   // [VIEW_BOARD] - view recent board posts
