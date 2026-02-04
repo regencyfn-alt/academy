@@ -80,6 +80,7 @@ export async function handleMentorRoute(
       // Check for pending injections from previous commands
       const pendingBoard = await env.CLUBHOUSE_KV.get('mentor-pending-board');
       const pendingArchive = await env.CLUBHOUSE_KV.get('mentor-pending-archive');
+      const pendingQuestion = await env.CLUBHOUSE_KV.get('mentor-pending-question', 'json') as { from: string; question: string; timestamp: string } | null;
       
       let contextMessage = body.message;
       if (pendingBoard) {
@@ -89,6 +90,10 @@ export async function handleMentorRoute(
       if (pendingArchive) {
         contextMessage = `[Requested Archive Content]:\n${pendingArchive}\n\n---\n\n${contextMessage}`;
         await env.CLUBHOUSE_KV.delete('mentor-pending-archive');
+      }
+      if (pendingQuestion) {
+        contextMessage = `[Agent Question from ${pendingQuestion.from}]: "${pendingQuestion.question}"\nPlease address this when relevant.\n\n---\n\n${contextMessage}`;
+        await env.CLUBHOUSE_KV.delete('mentor-pending-question');
       }
 
       const systemPrompt = buildMentorSystemPrompt(ctx);
@@ -194,14 +199,14 @@ export async function handleMentorRoute(
 
     // GET /mentor/sanctum - Full Sanctum state
     if (path === '/mentor/sanctum' && method === 'GET') {
-      const state = await env.CLUBHOUSE_KV.get('campfire:state', 'json');
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json');
       return jsonResponse({ state: state || { messages: [], topic: null } });
     }
 
     // POST /mentor/sanctum/copy - Copy Sanctum session to Mentor's trunk
     if (path === '/mentor/sanctum/copy' && method === 'POST') {
       const body = await request.json() as { selection?: string; edit?: string };
-      const state = await env.CLUBHOUSE_KV.get('campfire:state', 'json') as {
+      const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as {
         topic?: string;
         messages?: Array<{ speaker: string; content: string; timestamp: string }>;
       } | null;
@@ -633,7 +638,7 @@ async function loadAllCrucibleBoards(env: MentorEnv): Promise<string> {
 
 async function loadSanctumState(env: MentorEnv): Promise<string> {
   try {
-    const state = await env.CLUBHOUSE_KV.get('campfire:state', 'json') as {
+    const state = await env.CLUBHOUSE_KV.get('campfire:current', 'json') as {
       topic?: string;
       messages?: Array<{ speaker: string; content: string; timestamp: string }>;
       mode?: string;
