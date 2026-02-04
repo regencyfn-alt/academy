@@ -1529,7 +1529,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     // ============================================
     // VOICE PROVIDER (Hume AI + Web Speech fallback)
     // ============================================
-    var voiceProvider = 'hume';  // 'hume', 'webspeech', or 'elevenlabs'
+    var voiceProvider = 'elevenlabs';  // 'hume', 'webspeech', or 'elevenlabs'
     var webSpeechVoices = [];
     
     // Load Web Speech voices as fallback
@@ -1620,8 +1620,45 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     }
     
     // Universal speak function - routes to selected provider
+    // ElevenLabs TTS - calls backend /api/speak
+    function speakWithElevenLabs(text, agentId, callback) {
+      fetch(API + '/api/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, agentId: agentId }),
+        credentials: 'same-origin'
+      })
+        .then(function(res) {
+          if (!res.ok) {
+            console.warn('ElevenLabs TTS failed, falling back to Web Speech');
+            speakWithWebSpeech(text, agentId, callback);
+            return null;
+          }
+          return res.blob();
+        })
+        .then(function(blob) {
+          if (!blob) return;
+          if (isRecordingSession) sessionAudioBlobs.push(blob);
+          var url = URL.createObjectURL(blob);
+          var audio = new Audio(url);
+          currentAudio = audio;
+          audio.onended = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
+          audio.onerror = function() { URL.revokeObjectURL(url); currentAudio = null; if (callback) callback(); };
+          audio.play().catch(function(e) {
+            console.warn('ElevenLabs audio play failed:', e);
+            if (callback) callback();
+          });
+        })
+        .catch(function(e) {
+          console.warn('ElevenLabs TTS error, falling back to Web Speech:', e);
+          speakWithWebSpeech(text, agentId, callback);
+        });
+    }
+
     function speakText(text, agentId, callback) {
-      if (voiceProvider === 'hume') {
+      if (voiceProvider === 'elevenlabs') {
+        speakWithElevenLabs(text, agentId, callback);
+      } else if (voiceProvider === 'hume') {
         speakWithHume(text, agentId, callback);
       } else {
         speakWithWebSpeech(text, agentId, callback);
