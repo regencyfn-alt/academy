@@ -2,7 +2,7 @@
 // Deploy trigger: wrangler.toml fixed
 import { personalities, getPersonality, getAllAgents, getAllAgentsIncludingIsolated, AgentPersonality } from './personalities';
 import { phantoms, getPhantom, matchTriggers, PhantomProfile, PhantomTrigger } from './modules/phantoms';
-import { handleMentorRoute } from './modules/mentor';
+import { handleMentorRoute, callMentorForCouncil } from './modules/mentor';
 import { UI_HTML } from './ui';
 import { LOGIN_HTML } from './modules/login';
 import { generateSpeech, getAudioCacheKey, isSoundEnabled, toggleSound, isVisionEnabled, toggleVision, voiceMap } from './modules/elevenlabs';
@@ -5404,7 +5404,10 @@ INSTRUCTIONS:
         
         context += '\n\nRespond to the conversation as ' + displayName + '. Be concise but substantive.';
         
-        const response = await callAgentWithImage(agent, context, recentImage, env);
+        // Route Mentor through his own context builder, not the hollow agent builder
+        const response = agent.id === 'mentor'
+          ? await callMentorForCouncil(context, recentImage, env as any)
+          : await callAgentWithImage(agent, context, recentImage, env);
         
         // Route to Crucible board if mode is active
         if (body.mode === 'crucible') {
