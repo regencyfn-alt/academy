@@ -436,6 +436,27 @@ export async function handleMentorRoute(
       }
     }
 
+    // GET /mentor/debug/canon - Diagnostic: test canon loading
+    if (path === '/mentor/debug/canon' && method === 'GET') {
+      try {
+        const ontologyList = await env.CLUBHOUSE_KV.list({ prefix: 'ontology:' });
+        const keys = ontologyList.keys.map(k => k.name);
+        const entries: any[] = [];
+        const errors: any[] = [];
+        for (const key of keys.slice(0, 15)) {
+          try {
+            const val = await env.CLUBHOUSE_KV.get(key, 'json');
+            entries.push({ key, val, passesFilter: val && (val.status === 'canon' || val.status === 'established' || !val.status) });
+          } catch (e: any) {
+            errors.push({ key, error: e.message });
+          }
+        }
+        return jsonResponse({ keyCount: keys.length, keys, entries, errors });
+      } catch (e: any) {
+        return jsonResponse({ error: e.message, stack: e.stack }, 500);
+      }
+    }
+
     // GET /mentor/session-memory - Get Mentor's session memory
     if (path === '/mentor/session-memory' && method === 'GET') {
       const data = await env.CLUBHOUSE_KV.get('session-memory:mentor', 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
