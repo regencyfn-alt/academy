@@ -1107,3 +1107,40 @@ Synthesize this into a clear summary and recommendation.`;
   return data.content?.[0]?.text || '(Synthesis failed)';
 }
 
+
+// === MENTOR COUNCIL SPEECH ===
+// Called when Mentor speaks in campfire — uses full Mentor context, not hollow agent builder
+export async function callMentorForCouncil(councilContext: string, imageBase64: string | undefined, env: MentorEnv): Promise<string> {
+  const ctx = await buildMentorContext(env);
+  const systemPrompt = buildMentorSystemPrompt(ctx);
+  
+  const contentBlocks: any[] = [];
+  if (imageBase64 && imageBase64.startsWith('data:')) {
+    const [header, data] = imageBase64.split(',');
+    const mediaType = header.match(/data:(.*?);/)?.[1] || 'image/png';
+    contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data } });
+  }
+  contentBlocks.push({ type: 'text', text: councilContext });
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-5-20251101',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: contentBlocks }],
+    }),
+  });
+
+  const data: any = await response.json();
+  if (data.error) {
+    console.error('Mentor council error:', JSON.stringify(data.error));
+    return '(Mentor is momentarily unreachable)';
+  }
+  return data.content?.[0]?.text || '(Mentor had nothing to add)';
+}
