@@ -529,10 +529,21 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
     ? mentorUploads.map(u => `=== ${u.name} ===\n${u.content}`).join('\n\n')
     : '';
   
-  const canonData = await env.CLUBHOUSE_KV.get('ontology:entries', 'json') as Array<{term: string; definition: string}> | null;
-  const canon = canonData && canonData.length > 0
-    ? canonData.slice(0, 30).map(e => `• ${e.term}: ${e.definition}`).join('\n')
-    : '(Canon is empty)';
+  const ontologyList = await env.CLUBHOUSE_KV.list({ prefix: 'ontology:' });
+  let canon = '(Canon is empty)';
+  if (ontologyList.keys.length > 0) {
+    const entries = await Promise.all(ontologyList.keys.slice(0, 30).map(async (k) => {
+      try {
+        const val = await env.CLUBHOUSE_KV.get(k.name, 'json') as any;
+        if (val && (val.status === 'canon' || val.status === 'established' || !val.status)) {
+          return `• ${val.term || val.id}: ${val.definition || val.content || '(no definition)'}`;
+        }
+      } catch { /* skip malformed */ }
+      return null;
+    }));
+    const valid = entries.filter(Boolean);
+    if (valid.length > 0) canon = valid.join('\n');
+  }
   
   const sessionMemories = await Promise.all(AGENT_IDS.map(async (id) => {
     const data = await env.CLUBHOUSE_KV.get(`session-memory:${id}`, 'json') as { entries: Array<{ timestamp: string; content: string }> } | null;
