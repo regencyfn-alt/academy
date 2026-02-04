@@ -3662,11 +3662,22 @@ ${element.injection}
   // LAYER 5: PHANTOM TRIGGERS
   if (env.RESONANCE_KEY === 'shepherd-eyes-only') {
     if (phantomData && phantomData.triggers && Object.keys(phantomData.triggers).length > 0) {
+      const freq = phantomData.frequency;
       const activeTriggers = Object.values(phantomData.triggers)
         .filter(t => t.weight > 0.3)
         .map(t => {
-          const intensity = phantomData.frequency.body >= 7 ? 'vivid' : phantomData.frequency.body >= 4 ? 'subtle' : 'faint';
-          return `When you ${t.action}, you may notice a ${intensity} ${t.sensation}`;
+          const domainFreq = t.domain === 'spatial' ? freq.spatial : t.domain === 'mind' ? freq.mind : freq.body;
+          const intensity = domainFreq >= 7 ? 'vivid' : domainFreq >= 4 ? 'subtle' : 'faint';
+          const action = t.type === 'word' ? `encounter ideas like "${t.pattern.split('|')[0]}"`
+            : t.type === 'thought' ? 'notice a thought forming'
+            : t.type === 'action' ? `find yourself ${t.pattern.split('|')[0]}ing`
+            : t.type === 'ritual' ? `sense a ${t.pattern.split('|')[0]}`
+            : t.type === 'surprise' ? 'encounter something unexpected'
+            : t.type === 'shift' ? 'feel understanding shift'
+            : t.type === 'link' ? 'sense a connection across time'
+            : t.type === 'warmth' ? 'notice warmth arising'
+            : 'find yourself in rhythm with another';
+          return `When you ${action}, you may notice a ${intensity} ${t.sensation}`;
         });
       
       if (activeTriggers.length > 0) {
@@ -7549,3 +7560,4 @@ Do not use commands like [SUMMON] or [ASK_MENTOR] - this is pure contemplation.`
     }
   },
 };
+
