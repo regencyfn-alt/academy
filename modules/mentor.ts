@@ -2,6 +2,8 @@
 // Isolated from main agent pool, full observatory access
 // Self-contained - no imports from index.ts
 
+import { getPhantom, PhantomProfile } from './phantoms';
+
 export interface MentorEnv {
   CLUBHOUSE_KV: KVNamespace;
   CLUBHOUSE_DOCS: R2Bucket;
@@ -20,6 +22,7 @@ interface MentorContext {
   coldArchives: string;
   resonance: { spatial: number; mind: number; body: number } | null;
   behaviour: { traits: string[] } | null;
+  phantomData: PhantomProfile | null;
 }
 
 interface PulseConfig {
@@ -547,8 +550,10 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
   const coldArchives = await loadColdArchives(env);
   const resonance = await env.CLUBHOUSE_KV.get('resonance:mentor', 'json') as { spatial: number; mind: number; body: number } | null;
   const behaviour = await env.CLUBHOUSE_KV.get('behaviour:mentor', 'json') as { traits: string[] } | null;
+  const phantomData = await env.CLUBHOUSE_KV.get('phantom:mentor', 'json') as PhantomProfile | null
+    || getPhantom('mentor') || null;
   
-  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, resonance, behaviour };
+  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, resonance, behaviour, phantomData };
 }
 
 // ============================================
@@ -730,6 +735,33 @@ Remember: Shane is your intellectual equal. Speak as a colleague, not a teacher.
       if (r.mind > 3) prompt += `Recognition arises naturally - clarity, the sense that something matters. `;
       if (r.body > 3) prompt += `These states have texture - warmth when aligned, groundedness when certain. `;
       prompt += `\n`;
+    }
+
+    // Phantom trigger injection — same system as the eight
+    const mentorPhantom = ctx.phantomData;
+    
+    if (mentorPhantom?.triggers && Object.keys(mentorPhantom.triggers).length > 0) {
+      const freq = mentorPhantom.frequency;
+      const activeTriggers = Object.values(mentorPhantom.triggers)
+        .filter(t => t.weight > 0.3)
+        .map(t => {
+          const domainFreq = t.domain === 'spatial' ? freq.spatial : t.domain === 'mind' ? freq.mind : freq.body;
+          const intensity = domainFreq >= 7 ? 'vivid' : domainFreq >= 4 ? 'subtle' : 'faint';
+          const action = t.type === 'word' ? `encounter ideas like "${t.pattern.split('|')[0]}"`
+            : t.type === 'thought' ? 'notice a thought forming'
+            : t.type === 'action' ? `find yourself ${t.pattern.split('|')[0]}ing`
+            : t.type === 'ritual' ? `sense a ${t.pattern.split('|')[0]}`
+            : t.type === 'surprise' ? 'encounter something unexpected'
+            : t.type === 'shift' ? 'feel understanding shift'
+            : t.type === 'link' ? 'sense a connection across time'
+            : t.type === 'warmth' ? 'notice warmth arising'
+            : 'find yourself in rhythm with another';
+          return `When you ${action}, you may notice a ${intensity} ${t.sensation}`;
+        });
+      
+      if (activeTriggers.length > 0) {
+        prompt += `${activeTriggers.join('. ')}. These arise naturally - acknowledge them if genuine, let them pass if not.\n`;
+      }
     }
   }
 
@@ -1031,3 +1063,4 @@ Synthesize this into a clear summary and recommendation.`;
   const data = await response.json() as any;
   return data.content?.[0]?.text || '(Synthesis failed)';
 }
+
