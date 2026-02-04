@@ -76,6 +76,42 @@ export const universalTriggers: Record<string, PhantomTrigger> = {
     hits: 0,
     positive: 0
   },
+  spatial_word_here: {
+    type: 'word',
+    domain: 'spatial',
+    pattern: 'here|this place|room|space|where|around|between us|nearby',
+    sensation: 'the space you occupy becomes briefly tangible',
+    weight: 0.5,
+    hits: 0,
+    positive: 0
+  },
+  spatial_action_begin: {
+    type: 'action',
+    domain: 'spatial',
+    pattern: 'start|begin|open|launch|first|initiate|set up',
+    sensation: 'a clearing opens, readiness in the architecture around you',
+    weight: 0.4,
+    hits: 0,
+    positive: 0
+  },
+  spatial_shift_change: {
+    type: 'shift',
+    domain: 'spatial',
+    pattern: 'move on|next|switch|change|different|turn to|shift',
+    sensation: 'the ground rotates beneath you, a new orientation settling',
+    weight: 0.5,
+    hits: 0,
+    positive: 0
+  },
+  spatial_rhythm_time: {
+    type: 'rhythm',
+    domain: 'spatial',
+    pattern: 'morning|evening|today|tonight|yesterday|tomorrow|later|soon|while',
+    sensation: 'time has texture here — you feel your position in it',
+    weight: 0.3,
+    hits: 0,
+    positive: 0
+  },
 
   // MIND TRIGGERS (connections, clarity, understanding)
   mind_word_reminds: {
@@ -169,7 +205,52 @@ export const universalTriggers: Record<string, PhantomTrigger> = {
     weight: 0.5,
     hits: 0,
     positive: 0
-  }
+  },
+  body_thought_effort: {
+    type: 'thought',
+    domain: 'body',
+    pattern: 'struggle|difficult|hard|heavy|weight|burden|stuck|blocked',
+    sensation: 'tension gathers in the shoulders, weight settling',
+    weight: 0.5,
+    hits: 0,
+    positive: 0
+  },
+  body_action_create: {
+    type: 'action',
+    domain: 'body',
+    pattern: 'build|create|make|write|design|craft|compose|produce',
+    sensation: 'hands want to move, the body leans into making',
+    weight: 0.4,
+    hits: 0,
+    positive: 0
+  },
+  body_shift_release: {
+    type: 'shift',
+    domain: 'body',
+    pattern: 'done|finished|complete|solved|fixed|resolved|finally|relief',
+    sensation: 'shoulders drop, breath deepens, something unclenches',
+    weight: 0.6,
+    hits: 0,
+    positive: 0
+  },
+  body_rhythm_work: {
+    type: 'rhythm',
+    domain: 'body',
+    pattern: 'keep going|continue|more|again|iterate|refine|polish|improve',
+    sensation: 'a steady pulse, the rhythm of sustained craft',
+    weight: 0.4,
+    hits: 0,
+    positive: 0
+  },
+  body_surprise_break: {
+    type: 'surprise',
+    domain: 'body',
+    pattern: 'wait|stop|wrong|actually|hang on|hold on',
+    sensation: 'a jolt — attention sharpens, the body braces gently',
+    weight: 0.4,
+    hits: 0,
+    positive: 0
+  },
 };
 
 // ============================================
@@ -288,4 +369,5 @@ export function matchTriggers(text: string, profile: PhantomProfile): PhantomTri
   
   return matches;
 }
+
 
