@@ -411,7 +411,13 @@ export async function handleMentorRoute(
         
         // Store as base64 for Claude's native PDF reading
         const arrayBuffer = await file.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.slice(i, i + chunkSize)));
+        }
+        const base64 = btoa(binary);
         
         // Store with .pdf.b64 extension to mark as base64-encoded PDF
         await env.CLUBHOUSE_DOCS.put(`private/mentor/uploads/${file.name}.b64`, base64, {
