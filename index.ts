@@ -4512,6 +4512,22 @@ export default {
     }
 
     // Check authentication for protected routes
+    // Temporary diagnostic - remove after debugging
+    if (path === '/debug/canon' && method === 'GET') {
+      try {
+        const ontologyList = await env.CLUBHOUSE_KV.list({ prefix: 'ontology:' });
+        const keys = ontologyList.keys.map((k: any) => k.name);
+        const entries: any[] = [];
+        for (const key of keys.slice(0, 5)) {
+          try {
+            const val = await env.CLUBHOUSE_KV.get(key, 'json');
+            entries.push({ key, val: val ? 'HAS DATA' : 'NULL', term: (val as any)?.term?.slice(0, 40) });
+          } catch (e: any) { entries.push({ key, error: e.message }); }
+        }
+        return jsonResponse({ keyCount: keys.length, entries });
+      } catch (e: any) { return jsonResponse({ error: e.message }, 500); }
+    }
+
     const publicPaths = ['/login', '/auth', '/contact'];
     if (!publicPaths.includes(path)) {
       const sessionId = getSessionCookie(request);
