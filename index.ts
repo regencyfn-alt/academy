@@ -1931,7 +1931,7 @@ async function callClaude(
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: 500,
       temperature,
       system: systemContent,
       messages: [{ role: 'user', content: prompt }],
@@ -1991,7 +1991,7 @@ async function callClaudeWithImage(prompt: string, systemPrompt: string, imageBa
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: 500,
       system: systemContent,
       messages: [{
         role: 'user',
