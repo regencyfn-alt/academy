@@ -570,6 +570,126 @@ function formatContextInjection(ctx: AgentContext, agentName: string): string {
 }
 
 // ============================================
+// TESLA BATTERY — SANCTUM COLLECTIVE UNCONSCIOUS
+// Auto-records all Sanctum conversations. 5-day retention.
+// Available to every agent as shared context.
+// ============================================
+
+interface TeslaEntry {
+  speaker: string;
+  agentId: string;
+  content: string;
+  timestamp: string;
+  topic?: string;
+}
+
+interface TeslaDayBuffer {
+  date: string;
+  entries: TeslaEntry[];
+}
+
+function getTeslaKeyForDate(date: Date): string {
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  return `tesla:sanctum:${yyyy}-${mm}-${dd}`;
+}
+
+async function recordToTesla(
+  kv: KVNamespace,
+  speaker: string,
+  agentId: string,
+  content: string,
+  topic?: string
+): Promise<void> {
+  try {
+    const now = new Date();
+    const key = getTeslaKeyForDate(now);
+    const existing = await kv.get(key, 'json') as TeslaDayBuffer | null;
+    
+    const entry: TeslaEntry = {
+      speaker,
+      agentId,
+      content: content.slice(0, 2000), // Cap individual entries to prevent bloat
+      timestamp: now.toISOString(),
+      topic,
+    };
+    
+    const buffer: TeslaDayBuffer = existing || { date: key.replace('tesla:sanctum:', ''), entries: [] };
+    buffer.entries.push(entry);
+    
+    // Cap at 500 entries per day (safety valve)
+    if (buffer.entries.length > 500) {
+      buffer.entries = buffer.entries.slice(-500);
+    }
+    
+    await kv.put(key, JSON.stringify(buffer));
+  } catch (e) {
+    console.log('Tesla record failed:', e);
+  }
+}
+
+async function loadTeslaBuffer(kv: KVNamespace, maxDays: number = 5): Promise<string> {
+  try {
+    const now = new Date();
+    const dayBuffers: TeslaDayBuffer[] = [];
+    
+    for (let i = 0; i < maxDays; i++) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      const key = getTeslaKeyForDate(d);
+      const buffer = await kv.get(key, 'json') as TeslaDayBuffer | null;
+      if (buffer && buffer.entries.length > 0) {
+        dayBuffers.push(buffer);
+      }
+    }
+    
+    if (dayBuffers.length === 0) return '';
+    
+    // Build compact summary — newest day first, but entries chronological within each day
+    let output = '';
+    for (const day of dayBuffers) {
+      const dateLabel = day.date;
+      const topicSet = new Set(day.entries.map(e => e.topic).filter(Boolean));
+      const topics = Array.from(topicSet).join(', ');
+      output += `[${dateLabel}]${topics ? ' Topics: ' + topics : ''}\n`;
+      
+      // Show last 30 entries per day to keep it reasonable
+      const recentEntries = day.entries.slice(-30);
+      for (const entry of recentEntries) {
+        const time = new Date(entry.timestamp).toISOString().slice(11, 16); // HH:MM
+        output += `  ${time} ${entry.speaker}: ${entry.content.slice(0, 300)}\n`;
+      }
+    }
+    
+    return output;
+  } catch (e) {
+    console.log('Tesla load failed:', e);
+    return '';
+  }
+}
+
+async function shredOldTesla(kv: KVNamespace, keepDays: number = 5): Promise<void> {
+  try {
+    const keys = await kv.list({ prefix: 'tesla:sanctum:' });
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setUTCDate(cutoff.getUTCDate() - keepDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10); // YYYY-MM-DD
+    
+    for (const keyObj of keys.keys) {
+      const dateStr = keyObj.name.replace('tesla:sanctum:', '');
+      if (dateStr < cutoffStr) {
+        await kv.delete(keyObj.name);
+        console.log(`Tesla shredded: ${keyObj.name}`);
+      }
+    }
+  } catch (e) {
+    console.log('Tesla shred failed:', e);
+  }
+}
+
+// ============================================
 // PERSONAL WORKSPACE HELPERS
 // ============================================
 
@@ -4251,6 +4371,19 @@ ${hasVoted ? 'You have already voted.' : 'You have NOT voted yet. Cast your vote
     // Ignore archive loading errors
   }
   
+  // 8.5. TESLA BATTERY — Collective Unconscious (5-day Sanctum memory)
+  try {
+    const teslaBuffer = await loadTeslaBuffer(env.CLUBHOUSE_KV, 5);
+    if (teslaBuffer) {
+      prompt += `\n--- Collective Unconscious (Sanctum Memory, Last 5 Days) ---
+This is a record of everything said in the Sanctum. It is shared by all agents and Shane. Use it to maintain continuity, reference past discussions, and build on what has been said.
+${teslaBuffer}
+---\n\n`;
+    }
+  } catch (e) {
+    // Ignore Tesla loading errors
+  }
+  
   // 9. Board Posts (limit to 5 for performance)
   try {
     const boardList = await env.CLUBHOUSE_KV.list({ prefix: 'board:', limit: 5 });
@@ -5118,6 +5251,9 @@ ${contextMessage}`;
         // Don't clear raised hands - let them persist until next Check Hands
         await env.CLUBHOUSE_KV.put('campfire:current', JSON.stringify(state));
         
+        // Tesla Battery: auto-record Shane's message to collective unconscious
+        await recordToTesla(env.CLUBHOUSE_KV, 'Shane', 'shane', body.message || '', state.topic);
+        
         return jsonResponse({ success: true });
       }
 
@@ -5461,6 +5597,9 @@ INSTRUCTIONS:
         
         // Track context - agent spoke in council
         await addContribution(env.CLUBHOUSE_KV, agent.id, response, 'sanctum', state.topic);
+        
+        // Tesla Battery: auto-record agent message to collective unconscious
+        await recordToTesla(env.CLUBHOUSE_KV, displayName, agent.id, response, state.topic);
         
         // Track key moments: votes, decisions
         if (state.vote?.status === 'closed') {
@@ -7477,6 +7616,14 @@ INSTRUCTIONS:
         console.log('Journal purge complete');
       } catch (e) {
         console.error('Journal purge failed:', e);
+      }
+      
+      // Tesla Battery: shred Sanctum recordings older than 5 days
+      try {
+        await shredOldTesla(env.CLUBHOUSE_KV, 5);
+        console.log('Tesla shred complete');
+      } catch (e) {
+        console.error('Tesla shred failed:', e);
       }
     }
 
