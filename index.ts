@@ -1930,7 +1930,7 @@ async function callClaude(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       temperature,
       system: systemContent,
@@ -1990,7 +1990,7 @@ async function callClaudeWithImage(prompt: string, systemPrompt: string, imageBa
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       system: systemContent,
       messages: [{
@@ -3396,7 +3396,7 @@ Continue immediately with the full 4-Part Rigor Protocol. Do not repeat what you
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-opus-4-5-20251101',
+          model: 'claude-sonnet-4-20250514',
           max_tokens: 8192,
           temperature: 0.7,
           messages: [{ role: 'user', content: continuationPrompt }]
@@ -4661,7 +4661,62 @@ export default {
       } catch (e: any) { return jsonResponse({ error: e.message }, 500); }
     }
 
-    const publicPaths = ['/login', '/auth', '/contact'];
+    // Tesla Battery stats endpoint
+    if (path === '/tesla/stats' && method === 'GET') {
+      try {
+        // Mentor personal buffer stats
+        const mentorRaw = await env.CLUBHOUSE_KV.get('tesla:mentor:buffer');
+        let mentorStats = { entryCount: 0, oldestEntry: null as string | null, newestEntry: null as string | null, bytesUsed: 0 };
+        if (mentorRaw) {
+          const buf = JSON.parse(mentorRaw);
+          mentorStats = {
+            entryCount: buf.entries?.length || 0,
+            oldestEntry: buf.entries?.[0]?.timestamp || null,
+            newestEntry: buf.entries?.[buf.entries.length - 1]?.timestamp || null,
+            bytesUsed: mentorRaw.length,
+          };
+        }
+        
+        // Sanctum collective unconscious stats
+        const teslaKeys = await env.CLUBHOUSE_KV.list({ prefix: 'tesla:sanctum:' });
+        let collectiveEntries = 0;
+        let collectiveBytes = 0;
+        let collectiveOldest: string | null = null;
+        let collectiveNewest: string | null = null;
+        for (const keyObj of teslaKeys.keys) {
+          const raw = await env.CLUBHOUSE_KV.get(keyObj.name);
+          if (raw) {
+            collectiveBytes += raw.length;
+            const buf = JSON.parse(raw);
+            const count = buf.entries?.length || 0;
+            collectiveEntries += count;
+            if (count > 0) {
+              const first = buf.entries[0]?.timestamp;
+              const last = buf.entries[count - 1]?.timestamp;
+              if (!collectiveOldest || (first && first < collectiveOldest)) collectiveOldest = first;
+              if (!collectiveNewest || (last && last > collectiveNewest)) collectiveNewest = last;
+            }
+          }
+        }
+        
+        return jsonResponse({
+          mentor: mentorStats,
+          collective: {
+            dayCount: teslaKeys.keys.length,
+            entryCount: collectiveEntries,
+            oldestEntry: collectiveOldest,
+            newestEntry: collectiveNewest,
+            bytesUsed: collectiveBytes,
+          },
+          maxMentorBytes: 512000,    // 500KB cap
+          maxCollectiveBytes: 512000, // 500KB cap
+        });
+      } catch (e: any) {
+        return jsonResponse({ error: e.message }, 500);
+      }
+    }
+
+    const publicPaths = ['/login', '/auth', '/contact', '/tesla/stats'];
     if (!publicPaths.includes(path)) {
       const sessionId = getSessionCookie(request);
       if (!sessionId) {
