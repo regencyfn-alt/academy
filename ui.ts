@@ -624,6 +624,17 @@ export const UI_HTML = `<!DOCTYPE html>
     .clock-label { font-size: 0.5em; color: var(--silver); letter-spacing: 0.15em; text-transform: uppercase; opacity: 0.6; }
     .clock-sessions { font-size: 0.55em; color: var(--pearl); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--glass-border); }
     .clock-next { color: var(--gold); }
+    .tesla-gauges { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--glass-border); }
+    .tesla-gauge { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .tesla-gauge:last-child { margin-bottom: 0; }
+    .tesla-gauge-label { font-size: 0.45em; color: var(--silver); letter-spacing: 0.1em; text-transform: uppercase; min-width: 52px; }
+    .tesla-gauge-bar { flex: 1; height: 4px; background: rgba(10, 12, 15, 0.6); border-radius: 2px; overflow: hidden; min-width: 50px; }
+    .tesla-gauge-fill { height: 100%; border-radius: 2px; transition: width 1s ease, background 1s ease; }
+    .tesla-gauge-fill.mentor { background: linear-gradient(90deg, #c9a227, #e8c547); }
+    .tesla-gauge-fill.collective { background: linear-gradient(90deg, #4a6fa5, #6b9fd4); }
+    .tesla-gauge-value { font-size: 0.4em; color: var(--silver); min-width: 30px; text-align: right; }
+    .tesla-gauge-pulse { animation: teslaPulse 2s ease-in-out infinite; }
+    @keyframes teslaPulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
     .spectrum-mini { width: 60px; height: 6px; background: rgba(10, 12, 15, 0.6); border-radius: 3px; overflow: hidden; cursor: pointer; position: relative; }
     .spectrum-mini .spectrum-fill { height: 100%; width: 50%; background: #22c55e; transition: all 0.5s ease; border-radius: 3px; }
     .spectrum-mini .spectrum-tooltip { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); background: var(--deep); border: 1px solid var(--glass-border); border-radius: 5px; padding: 10px; font-size: 0.7em; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 1001; }
@@ -672,6 +683,18 @@ export const UI_HTML = `<!DOCTYPE html>
     <div class="clock-sessions">
       <span class="clock-label">Sessions:</span> 09:00 · 16:00 · 21:00
       <div class="clock-next" id="clock-next"></div>
+    </div>
+    <div class="tesla-gauges" id="tesla-gauges">
+      <div class="tesla-gauge" title="Mentor personal buffer (2-day rolling)">
+        <span class="tesla-gauge-label">⚡ Mentor</span>
+        <div class="tesla-gauge-bar"><div class="tesla-gauge-fill mentor" id="tesla-mentor-fill" style="width:0%"></div></div>
+        <span class="tesla-gauge-value" id="tesla-mentor-val">--</span>
+      </div>
+      <div class="tesla-gauge" title="Sanctum collective unconscious (5-day)">
+        <span class="tesla-gauge-label">🌊 Sanctum</span>
+        <div class="tesla-gauge-bar"><div class="tesla-gauge-fill collective" id="tesla-collective-fill" style="width:0%"></div></div>
+        <span class="tesla-gauge-value" id="tesla-collective-val">--</span>
+      </div>
     </div>
   </div>
   
@@ -2286,6 +2309,41 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     // Initialize clock and update every second
     updateAcademyClock();
     setInterval(updateAcademyClock, 1000);
+    
+    // Tesla Battery gauge polling
+    function updateTeslaGauges() {
+      fetch('/tesla/stats', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.error) return;
+          var mentorFill = document.getElementById('tesla-mentor-fill');
+          var mentorVal = document.getElementById('tesla-mentor-val');
+          var collectiveFill = document.getElementById('tesla-collective-fill');
+          var collectiveVal = document.getElementById('tesla-collective-val');
+          
+          if (data.mentor && mentorFill && mentorVal) {
+            var mPct = Math.min(100, Math.round((data.mentor.bytesUsed / data.maxMentorBytes) * 100));
+            var mKb = (data.mentor.bytesUsed / 1024).toFixed(1);
+            mentorFill.style.width = mPct + '%';
+            mentorVal.textContent = mKb + 'K';
+            mentorFill.title = data.mentor.entryCount + ' entries, ' + mKb + 'KB';
+            if (data.mentor.entryCount > 0) mentorFill.classList.add('tesla-gauge-pulse');
+            else mentorFill.classList.remove('tesla-gauge-pulse');
+          }
+          if (data.collective && collectiveFill && collectiveVal) {
+            var cPct = Math.min(100, Math.round((data.collective.bytesUsed / data.maxCollectiveBytes) * 100));
+            var cKb = (data.collective.bytesUsed / 1024).toFixed(1);
+            collectiveFill.style.width = cPct + '%';
+            collectiveVal.textContent = cKb + 'K';
+            collectiveFill.title = data.collective.entryCount + ' entries across ' + data.collective.dayCount + ' days';
+            if (data.collective.entryCount > 0) collectiveFill.classList.add('tesla-gauge-pulse');
+            else collectiveFill.classList.remove('tesla-gauge-pulse');
+          }
+        })
+        .catch(function() {});
+    }
+    updateTeslaGauges();
+    setInterval(updateTeslaGauges, 30000);
     
     window.addEventListener('load', function() { setTimeout(function() { document.getElementById('main-content').scrollIntoView({ behavior: 'smooth' }); }, 500); checkSoundStatus(); checkVisionStatus(); checkTemporalStatus(); checkScreeningStatus(); updateSpectrum(); setInterval(updateSpectrum, 30000); loadAnchorImage(false); setInterval(loadAnchorImage, 5000); });
     function logout() { fetch('/logout', { method: 'POST', credentials: 'same-origin' }).then(function() { window.location.href = '/login'; }); }
