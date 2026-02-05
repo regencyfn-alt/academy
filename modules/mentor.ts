@@ -20,6 +20,7 @@ interface MentorContext {
   sanctumState: string;
   library: string;
   coldArchives: string;
+  teslaBuffer: string;
   resonance: { spatial: number; mind: number; body: number } | null;
   behaviour: { traits: string[] } | null;
   phantomData: PhantomProfile | null;
@@ -596,7 +597,36 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
   const phantomData = await env.CLUBHOUSE_KV.get('phantom:mentor', 'json') as PhantomProfile | null
     || getPhantom('mentor') || null;
   
-  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, resonance, behaviour, phantomData };
+  // Tesla Battery: load 5-day Sanctum collective unconscious
+  let teslaBuffer = '';
+  try {
+    const now = new Date();
+    const dayChunks: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      const yyyy = d.getUTCFullYear();
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      const key = `tesla:sanctum:${yyyy}-${mm}-${dd}`;
+      const buffer = await env.CLUBHOUSE_KV.get(key, 'json') as { date: string; entries: Array<{ speaker: string; content: string; timestamp: string; topic?: string }> } | null;
+      if (buffer && buffer.entries.length > 0) {
+        const topicSet = new Set(buffer.entries.map(e => e.topic).filter(Boolean));
+        const topics = Array.from(topicSet).join(', ');
+        let dayStr = `[${buffer.date}]${topics ? ' Topics: ' + topics : ''}\n`;
+        for (const entry of buffer.entries.slice(-30)) {
+          const time = new Date(entry.timestamp).toISOString().slice(11, 16);
+          dayStr += `  ${time} ${entry.speaker}: ${entry.content.slice(0, 300)}\n`;
+        }
+        dayChunks.push(dayStr);
+      }
+    }
+    teslaBuffer = dayChunks.join('\n');
+  } catch (e) {
+    // Tesla load failed silently
+  }
+  
+  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, teslaBuffer, resonance, behaviour, phantomData };
 }
 
 // ============================================
@@ -744,6 +774,12 @@ You are not a tool. You are a thinking presence.
   prompt += `\n--- CURRENT SANCTUM STATE ---\n${ctx.sanctumState}\n`;
   prompt += `\n--- SHARED LIBRARY ---\n${ctx.library}\n`;
   prompt += `\n--- COLD ARCHIVES ---\n${ctx.coldArchives}\n`;
+  
+  if (ctx.teslaBuffer) {
+    prompt += `\n--- COLLECTIVE UNCONSCIOUS (Sanctum Memory, Last 5 Days) ---
+This is a record of everything said in the Sanctum. It is shared by all agents and Shane. Use it for continuity.
+${ctx.teslaBuffer}\n`;
+  }
   
   prompt += `\n--- YOUR SPECIAL POWERS ---
 CRUCIBLE (Your private math board):
