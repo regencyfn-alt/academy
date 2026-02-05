@@ -3468,7 +3468,10 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       var item = voiceQueue.shift();
       playAgentVoice(item.text, item.agentId, function() {
         isPlayingVoice = false;
-        processVoiceQueue();
+        // Breathing gap between speakers — 10 seconds so Shane can follow
+        if (voiceQueue.length > 0) {
+          setTimeout(function() { processVoiceQueue(); }, 10000);
+        }
       });
     }
     
