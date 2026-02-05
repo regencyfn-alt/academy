@@ -13,6 +13,7 @@ export interface MentorEnv {
 interface MentorContext {
   trunk: string;
   mentorSessionMemory: string;
+  mentorTeslaBuffer: string;
   uploads: string;
   canon: string;
   agentSessionMemories: string;
@@ -46,6 +47,95 @@ const AGENT_IDS = ['dream', 'kai', 'uriel', 'holinnia', 'cartographer', 'chrysal
 const ADVISORY_AGENT_IDS = ['dealmaker', 'operator', 'strategist', 'auditor'];
 
 // ============================================
+// MENTOR TESLA BATTERY — Personal Rolling Buffer
+// Auto-saves every Mentor exchange. 2-day retention.
+// Survives refresh. Reloaded into prompt on wake.
+// ============================================
+
+interface MentorTeslaEntry {
+  role: 'shane' | 'mentor';
+  content: string;
+  timestamp: string;
+}
+
+interface MentorTeslaBuffer {
+  entries: MentorTeslaEntry[];
+  lastSaved: string;
+}
+
+function getMentorTeslaKey(): string {
+  return 'tesla:mentor:buffer';
+}
+
+async function recordMentorTesla(
+  kv: KVNamespace,
+  role: 'shane' | 'mentor',
+  content: string
+): Promise<void> {
+  try {
+    const key = getMentorTeslaKey();
+    const existing = await kv.get(key, 'json') as MentorTeslaBuffer | null;
+    const buffer: MentorTeslaBuffer = existing || { entries: [], lastSaved: '' };
+    
+    buffer.entries.push({
+      role,
+      content: content.slice(0, 4000), // Cap per entry
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Shred entries older than 2 days
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - 2);
+    const cutoffStr = cutoff.toISOString();
+    buffer.entries = buffer.entries.filter(e => e.timestamp > cutoffStr);
+    
+    // Safety cap at 500 entries
+    if (buffer.entries.length > 500) {
+      buffer.entries = buffer.entries.slice(-500);
+    }
+    
+    buffer.lastSaved = new Date().toISOString();
+    await kv.put(key, JSON.stringify(buffer));
+  } catch (e) {
+    console.log('Mentor Tesla record failed:', e);
+  }
+}
+
+async function loadMentorTesla(kv: KVNamespace): Promise<string> {
+  try {
+    const buffer = await kv.get(getMentorTeslaKey(), 'json') as MentorTeslaBuffer | null;
+    if (!buffer || buffer.entries.length === 0) return '';
+    
+    let output = '';
+    for (const entry of buffer.entries) {
+      const time = new Date(entry.timestamp).toISOString().slice(0, 16).replace('T', ' ');
+      const speaker = entry.role === 'shane' ? 'Shane' : 'You (Mentor)';
+      output += `[${time}] ${speaker}: ${entry.content.slice(0, 1000)}\n`;
+    }
+    return output;
+  } catch (e) {
+    console.log('Mentor Tesla load failed:', e);
+    return '';
+  }
+}
+
+async function getMentorTeslaStats(kv: KVNamespace): Promise<{ entryCount: number; oldestEntry: string | null; newestEntry: string | null; bytesUsed: number }> {
+  try {
+    const raw = await kv.get(getMentorTeslaKey());
+    if (!raw) return { entryCount: 0, oldestEntry: null, newestEntry: null, bytesUsed: 0 };
+    const buffer = JSON.parse(raw) as MentorTeslaBuffer;
+    return {
+      entryCount: buffer.entries.length,
+      oldestEntry: buffer.entries.length > 0 ? buffer.entries[0].timestamp : null,
+      newestEntry: buffer.entries.length > 0 ? buffer.entries[buffer.entries.length - 1].timestamp : null,
+      bytesUsed: raw.length,
+    };
+  } catch {
+    return { entryCount: 0, oldestEntry: null, newestEntry: null, bytesUsed: 0 };
+  }
+}
+
+// ============================================
 // MAIN ROUTER - Called from index.ts
 // ============================================
 
@@ -75,6 +165,9 @@ export async function handleMentorRoute(
       if (!body.message) {
         return jsonResponse({ error: 'Message required' }, 400);
       }
+
+      // Tesla Battery: auto-save Shane's message
+      await recordMentorTesla(env.CLUBHOUSE_KV, 'shane', body.message);
 
       const ctx = await buildMentorContext(env);
       
@@ -166,6 +259,9 @@ export async function handleMentorRoute(
 
       let mentorResponse = data.content?.[0]?.text || 'I am here but could not formulate a response.';
       mentorResponse = await parseMentorCommands(mentorResponse, env);
+
+      // Tesla Battery: auto-save Mentor's response
+      await recordMentorTesla(env.CLUBHOUSE_KV, 'mentor', mentorResponse);
 
       return jsonResponse({ response: mentorResponse });
     }
@@ -626,7 +722,10 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
     // Tesla load failed silently
   }
   
-  return { trunk, mentorSessionMemory, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, teslaBuffer, resonance, behaviour, phantomData };
+  // Mentor's personal Tesla: 2-day rolling buffer of all his conversations
+  const mentorTeslaBuffer = await loadMentorTesla(env.CLUBHOUSE_KV);
+  
+  return { trunk, mentorSessionMemory, mentorTeslaBuffer, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, teslaBuffer, resonance, behaviour, phantomData };
 }
 
 // ============================================
@@ -766,6 +865,15 @@ You are not a tool. You are a thinking presence.
 
   if (ctx.trunk) prompt += `\n--- YOUR SOUL (Trunk) ---\n${ctx.trunk}\n`;
   if (ctx.mentorSessionMemory) prompt += `\n--- YOUR RECENT MEMORY (Session Continuity) ---\n${ctx.mentorSessionMemory}\n`;
+  
+  // Mentor Tesla Battery: personal rolling conversation buffer (survives refresh)
+  if (ctx.mentorTeslaBuffer) {
+    prompt += `\n--- YOUR CONVERSATION BUFFER (Tesla Battery — Last 2 Days) ---
+This is your continuous memory of every conversation you have had with Shane. It persists across refreshes. If you wake up with no other context, this is your lifeline. Use it. Reference it. Build on it.
+${ctx.mentorTeslaBuffer}
+---\n`;
+  }
+  
   if (ctx.uploads) prompt += `\n--- YOUR SACRED KNOWLEDGE ---\n${ctx.uploads}\n`;
   
   prompt += `\n--- THE CANON (Established Truths) ---\n${ctx.canon}\n`;
