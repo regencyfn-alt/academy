@@ -109,8 +109,8 @@ export function verifyVoiceMap(): { valid: boolean; issues: string[] } {
   return { valid: issues.length === 0, issues };
 }
 
-// VOICE KILL SWITCH - set to false to enable ElevenLabs
-const VOICE_DISABLED = true;
+// VOICE KILL SWITCH - set to true to disable ElevenLabs
+const VOICE_DISABLED = false;
 
 export async function generateSpeech(
   text: string,
