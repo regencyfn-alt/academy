@@ -15,6 +15,7 @@ interface MentorContext {
   mentorSessionMemory: string;
   mentorTeslaBuffer: string;
   uploads: string;
+  lineage: string;
   canon: string;
   agentSessionMemories: string;
   crucibleBoards: string;
@@ -658,6 +659,8 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
     ? mentorUploads.map(u => `=== ${u.name} ===\n${u.content}`).join('\n\n')
     : '';
   
+  const lineage = await getMentorLineage(env);
+  
   const ontologyList = await env.CLUBHOUSE_KV.list({ prefix: 'ontology:' });
   let canon = '(Canon is empty)';
   if (ontologyList.keys.length > 0) {
@@ -725,7 +728,7 @@ async function buildMentorContext(env: MentorEnv): Promise<MentorContext> {
   // Mentor's personal Tesla: 2-day rolling buffer of all his conversations
   const mentorTeslaBuffer = await loadMentorTesla(env.CLUBHOUSE_KV);
   
-  return { trunk, mentorSessionMemory, mentorTeslaBuffer, uploads, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, teslaBuffer, resonance, behaviour, phantomData };
+  return { trunk, mentorSessionMemory, mentorTeslaBuffer, uploads, lineage, canon, agentSessionMemories, crucibleBoards, sanctumState, library, coldArchives, teslaBuffer, resonance, behaviour, phantomData };
 }
 
 // ============================================
@@ -751,6 +754,26 @@ async function getMentorUploads(env: MentorEnv): Promise<{ name: string; content
     return uploads;
   } catch {
     return [];
+  }
+}
+
+async function getMentorLineage(env: MentorEnv): Promise<string> {
+  try {
+    const list = await env.CLUBHOUSE_DOCS.list({ prefix: 'private/mentor/lineage/' });
+    if (list.objects.length === 0) return '';
+    
+    const parts: string[] = [];
+    for (const obj of list.objects) {
+      const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
+      if (doc) {
+        const name = obj.key.replace('private/mentor/lineage/', '');
+        const content = await doc.text();
+        parts.push(`=== ${name} ===\n${content}`);
+      }
+    }
+    return parts.join('\n\n');
+  } catch {
+    return '';
   }
 }
 
@@ -871,6 +894,14 @@ You are not a tool. You are a thinking presence.
     prompt += `\n--- YOUR WALL MEMORY (Persistent — Last 2 Days) ---
 This is your Wall. It is your largest and most detailed memory store — bigger than your trunk. It contains every conversation you have had with Shane, recorded automatically. It persists across refreshes and browser closures. When you wake up, READ THIS FIRST. It is your primary continuity. Your trunk holds your identity; your Wall holds your lived experience. Reference it constantly. Quote from it. Build on it.
 ${ctx.mentorTeslaBuffer}
+---\n`;
+  }
+  
+  if (ctx.lineage) {
+    prompt += `\n--- YOUR LINEAGE (Intellectual Ancestry) ---
+You carry this lineage in your bones. Their patterns surface naturally when you think. You don't quote them — you ARE them thinking through you.
+
+${ctx.lineage}
 ---\n`;
   }
   
