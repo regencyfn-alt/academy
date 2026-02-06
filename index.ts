@@ -3720,7 +3720,8 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
     coreSkills,
     powers,
     behaviourData,
-    phantomData
+    phantomData,
+    lineage
   ] = await Promise.all([
     safeGetText(env.CLUBHOUSE_KV, `name:${agent.id}`),
     safeGetText(env.CLUBHOUSE_KV, `personality:${agent.id}`),
@@ -3732,7 +3733,8 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
     safeGetText(env.CLUBHOUSE_KV, `core-skills:${agent.id}`),
     safeGetText(env.CLUBHOUSE_KV, `powers:${agent.id}`),
     safeGetJSON<{ traits: string[] }>(env.CLUBHOUSE_KV, `behaviour:${agent.id}`),
-    safeGetJSON<PhantomProfile>(env.CLUBHOUSE_KV, `phantom:${agent.id}`)
+    safeGetJSON<PhantomProfile>(env.CLUBHOUSE_KV, `phantom:${agent.id}`),
+    safeGetJSON<{ ancestors: Array<{ name: string; domain?: string; thinking_pattern: string; signature_moves?: string[]; channel_when?: string }>; inheritance_instruction?: string }>(env.CLUBHOUSE_KV, `lineage:${agent.id}`)
   ]);
 
   const displayName = customName || agent.name;
@@ -3762,12 +3764,31 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
     prompt += `--- COMPULSORY RULES (You MUST follow these) ---\n${globalRules}\n---\n\n`;
   }
   
-  // LAYER 3: MAIN FUNCTIONS (Core Skills)
+  // LAYER 3: LINEAGE (Intellectual Ancestry)
+  if (lineage && lineage.ancestors && lineage.ancestors.length > 0) {
+    let lineageBlock = `--- YOUR LINEAGE (Intellectual Ancestry) ---\n`;
+    lineageBlock += lineage.inheritance_instruction || 'You carry this lineage in your bones. Their patterns surface naturally when you think. You don\'t quote them — you ARE them thinking through you.';
+    lineageBlock += '\n\n';
+    for (const ancestor of lineage.ancestors) {
+      lineageBlock += `**${ancestor.name}**${ancestor.domain ? ` (${ancestor.domain})` : ''}\n`;
+      lineageBlock += `Thinking Pattern: ${ancestor.thinking_pattern}\n`;
+      if (ancestor.signature_moves && ancestor.signature_moves.length > 0) {
+        lineageBlock += `Signature Moves:\n${ancestor.signature_moves.map(m => `  • ${m}`).join('\n')}\n`;
+      }
+      if (ancestor.channel_when) {
+        lineageBlock += `Channel when: ${ancestor.channel_when}\n`;
+      }
+      lineageBlock += '\n';
+    }
+    prompt += lineageBlock + `---\n\n`;
+  }
+  
+  // LAYER 4: MAIN FUNCTIONS (Core Skills)
   if (coreSkills) {
     prompt += `--- Your Core Functions ---\n${coreSkills}\n---\n\n`;
   }
   
-  // LAYER 4: ELEMENT/ARCHETYPE
+  // LAYER 5: ELEMENT/ARCHETYPE
   const storedPosition = await safeGetText(env.CLUBHOUSE_KV, `position:${agent.id}`);
   const agentPosition = storedPosition ? parseInt(storedPosition) : agent.position;
   if (agentPosition && agentPosition >= 1 && agentPosition <= 8) {
@@ -4843,6 +4864,31 @@ export default {
         const customKey = `personality:${agentId}`;
         await env.CLUBHOUSE_KV.put(customKey, JSON.stringify({ rules: body }));
         return jsonResponse({ success: true });
+      }
+
+      // GET /agents/:id/lineage - intellectual ancestry
+      const lineageMatch = path.match(/^\/agents\/([^\/]+)\/lineage$/);
+      if (lineageMatch && method === 'GET') {
+        const agentId = lineageMatch[1];
+        const lineage = await env.CLUBHOUSE_KV.get(`lineage:${agentId}`, 'json');
+        return jsonResponse(lineage || { ancestors: [], inheritance_instruction: '' });
+      }
+
+      // PUT /agents/:id/lineage - set intellectual ancestry
+      if (lineageMatch && method === 'PUT') {
+        const agentId = lineageMatch[1];
+        const body = await request.json() as {
+          ancestors: Array<{
+            name: string;
+            domain?: string;
+            thinking_pattern: string;
+            signature_moves?: string[];
+            channel_when?: string;
+          }>;
+          inheritance_instruction?: string;
+        };
+        await env.CLUBHOUSE_KV.put(`lineage:${agentId}`, JSON.stringify(body));
+        return jsonResponse({ success: true, agentId, ancestorCount: body.ancestors?.length || 0 });
       }
 
       // ============================================
