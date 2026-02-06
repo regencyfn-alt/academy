@@ -1226,20 +1226,15 @@ Function: ...
       <!-- Lineage (Intellectual Ancestry) -->
       <div class="form-section">
         <h3>🧬 Lineage</h3>
-        <p style="font-size: 0.7em; color: var(--silver); margin-bottom: 10px;">Intellectual ancestry - whose thinking patterns they channel. Injected at Layer 3 (high priority).</p>
-        <textarea id="agent-lineage" placeholder="Format (JSON):
-{
-  &quot;ancestors&quot;: [
-    {
-      &quot;name&quot;: &quot;Richard Feynman&quot;,
-      &quot;domain&quot;: &quot;theoretical physics, pedagogy&quot;,
-      &quot;thinking_pattern&quot;: &quot;Reduces complex systems to first principles...&quot;,
-      &quot;signature_moves&quot;: [&quot;Asks what if we are wrong about the obvious&quot;],
-      &quot;channel_when&quot;: &quot;explaining, simplifying&quot;
-    }
-  ],
-  &quot;inheritance_instruction&quot;: &quot;You carry this lineage in your bones...&quot;
-}" style="min-height: 180px; line-height: 1.5; font-family: 'Space Mono', monospace; font-size: 0.85em;"></textarea>
+        <p style="font-size: 0.7em; color: var(--silver); margin-bottom: 10px;">Intellectual ancestry - whose thinking patterns they channel. Injected at Layer 3 (high priority). Plain text, any format.</p>
+        <textarea id="agent-lineage" placeholder="Paste lineage here - plain text, any format.
+
+Example:
+=== Richard Feynman ===
+Domain: theoretical physics, pedagogy
+Thinking Pattern: Reduces complex systems to first principles, rebuilds playfully. Distrusts formalism that can't be explained to a child.
+Signature Moves: Asks 'what if we're wrong about the obvious part?', Uses physical intuition before equations
+Channel when: explaining, simplifying, finding cracks in assumptions" style="min-height: 180px; line-height: 1.5;"></textarea>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
           <span id="lineage-status" style="font-size: 0.7em; color: var(--silver);">Not loaded</span>
           <button class="btn btn-primary" onclick="saveLineage()">Save Lineage</button>
@@ -3935,6 +3930,26 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           document.getElementById('agent-powers').value = data.powers || '';
         })
         .catch(function() { document.getElementById('agent-powers').value = ''; });
+      
+      // Load lineage
+      fetch(API + '/agents/' + agent + '/lineage/lineage.txt', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          document.getElementById('agent-lineage').value = data.content || '';
+          var statusEl = document.getElementById('lineage-status');
+          if (data.content) {
+            statusEl.textContent = 'Loaded (' + data.content.length + ' chars)';
+            statusEl.style.color = 'var(--gold)';
+          } else {
+            statusEl.textContent = 'Empty';
+            statusEl.style.color = 'var(--silver)';
+          }
+        })
+        .catch(function() { 
+          document.getElementById('agent-lineage').value = ''; 
+          document.getElementById('lineage-status').textContent = 'Not set';
+          document.getElementById('lineage-status').style.color = 'var(--silver)';
+        });
     }
     
     function updateCharCount(textareaId, countId, max) {
@@ -4009,11 +4024,9 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       var statusEl = document.getElementById('lineage-status');
       
       if (!lineageText) {
-        // Clear lineage
-        fetch(API + '/agents/' + agent + '/lineage', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ancestors: [], inheritance_instruction: '' }),
+        // Clear lineage by deleting the file
+        fetch(API + '/agents/' + agent + '/lineage/lineage.txt', {
+          method: 'DELETE',
           credentials: 'same-origin'
         }).then(function() {
           flashSaveButton(btn);
@@ -4023,31 +4036,26 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         return;
       }
       
-      try {
-        var lineage = JSON.parse(lineageText);
-        if (!lineage.ancestors || !Array.isArray(lineage.ancestors)) {
-          statusEl.textContent = 'Invalid: needs "ancestors" array';
-          statusEl.style.color = '#ef4444';
-          return;
-        }
-        fetch(API + '/agents/' + agent + '/lineage', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(lineage),
-          credentials: 'same-origin'
-        }).then(function(res) { return res.json(); })
-        .then(function(data) {
+      // Save plain text to R2
+      fetch(API + '/agents/' + agent + '/lineage/lineage.txt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: lineageText }),
+        credentials: 'same-origin'
+      }).then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
           flashSaveButton(btn);
-          statusEl.textContent = data.ancestorCount + ' ancestor(s) saved';
+          statusEl.textContent = 'Saved (' + lineageText.length + ' chars)';
           statusEl.style.color = 'var(--gold)';
-        }).catch(function() { 
+        } else {
           statusEl.textContent = 'Save failed';
           statusEl.style.color = '#ef4444';
-        });
-      } catch (e) {
-        statusEl.textContent = 'Invalid JSON: ' + e.message;
+        }
+      }).catch(function() { 
+        statusEl.textContent = 'Save failed';
         statusEl.style.color = '#ef4444';
-      }
+      });
     }
     
     // Character count listeners
