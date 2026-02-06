@@ -1223,6 +1223,29 @@ Function: ...
         </div>
       </div>
       
+      <!-- Lineage (Intellectual Ancestry) -->
+      <div class="form-section">
+        <h3>🧬 Lineage</h3>
+        <p style="font-size: 0.7em; color: var(--silver); margin-bottom: 10px;">Intellectual ancestry - whose thinking patterns they channel. Injected at Layer 3 (high priority).</p>
+        <textarea id="agent-lineage" placeholder="Format (JSON):
+{
+  &quot;ancestors&quot;: [
+    {
+      &quot;name&quot;: &quot;Richard Feynman&quot;,
+      &quot;domain&quot;: &quot;theoretical physics, pedagogy&quot;,
+      &quot;thinking_pattern&quot;: &quot;Reduces complex systems to first principles...&quot;,
+      &quot;signature_moves&quot;: [&quot;Asks what if we are wrong about the obvious&quot;],
+      &quot;channel_when&quot;: &quot;explaining, simplifying&quot;
+    }
+  ],
+  &quot;inheritance_instruction&quot;: &quot;You carry this lineage in your bones...&quot;
+}" style="min-height: 180px; line-height: 1.5; font-family: 'Space Mono', monospace; font-size: 0.85em;"></textarea>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+          <span id="lineage-status" style="font-size: 0.7em; color: var(--silver);">Not loaded</span>
+          <button class="btn btn-primary" onclick="saveLineage()">Save Lineage</button>
+        </div>
+      </div>
+      
       <!-- Earned Powers (Granted by Shane) -->
       <div class="form-section">
         <h3>⚡ Earned Powers</h3>
@@ -1254,6 +1277,18 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           <div class="rune">⟡</div>
           <p>Drop sacred texts here</p>
           <input type="file" id="private-file-input" accept=".txt,.md,.json,.pdf">
+        </div>
+      </div>
+      
+      <!-- Lineage (Intellectual Ancestry) -->
+      <div class="form-section private">
+        <h3 class="private">🧬 Lineage</h3>
+        <p style="font-size: 0.7em; color: var(--gold); margin-bottom: 10px;">Intellectual ancestors whose thinking patterns this agent channels</p>
+        <div id="lineage-list"><div class="empty" style="padding: 20px;">No lineage defined</div></div>
+        <div class="file-upload" id="lineage-upload-zone" style="border-color: var(--gold);">
+          <div class="rune">🧬</div>
+          <p>Drop lineage files here</p>
+          <input type="file" id="lineage-file-input" accept=".txt,.md">
         </div>
       </div>
       
@@ -3967,6 +4002,54 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       }).catch(function() { showStatus('codex-status', 'Failed to save', 'error'); });
     }
     
+    function saveLineage() {
+      var agent = document.getElementById('codex-agent').value;
+      var lineageText = document.getElementById('agent-lineage').value.trim();
+      var btn = event.target;
+      var statusEl = document.getElementById('lineage-status');
+      
+      if (!lineageText) {
+        // Clear lineage
+        fetch(API + '/agents/' + agent + '/lineage', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ancestors: [], inheritance_instruction: '' }),
+          credentials: 'same-origin'
+        }).then(function() {
+          flashSaveButton(btn);
+          statusEl.textContent = 'Cleared';
+          statusEl.style.color = 'var(--silver)';
+        });
+        return;
+      }
+      
+      try {
+        var lineage = JSON.parse(lineageText);
+        if (!lineage.ancestors || !Array.isArray(lineage.ancestors)) {
+          statusEl.textContent = 'Invalid: needs "ancestors" array';
+          statusEl.style.color = '#ef4444';
+          return;
+        }
+        fetch(API + '/agents/' + agent + '/lineage', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(lineage),
+          credentials: 'same-origin'
+        }).then(function(res) { return res.json(); })
+        .then(function(data) {
+          flashSaveButton(btn);
+          statusEl.textContent = data.ancestorCount + ' ancestor(s) saved';
+          statusEl.style.color = 'var(--gold)';
+        }).catch(function() { 
+          statusEl.textContent = 'Save failed';
+          statusEl.style.color = '#ef4444';
+        });
+      } catch (e) {
+        statusEl.textContent = 'Invalid JSON: ' + e.message;
+        statusEl.style.color = '#ef4444';
+      }
+    }
+    
     // Character count listeners
     document.getElementById('agent-profile').addEventListener('input', function() {
       updateCharCount('agent-profile', 'profile-char-count', 2500);
@@ -4029,6 +4112,20 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
           }
         })
         .catch(function() { document.getElementById('private-uploads-list').innerHTML = '<div class="empty" style="padding: 20px;">Failed to load</div>'; });
+      
+      // Load lineage
+      fetch(API + '/agents/' + agent + '/lineage', { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data && data.files && data.files.length > 0) {
+            document.getElementById('lineage-list').innerHTML = data.files.map(function(f) {
+              return '<div class="doc-list-item" style="border-color: var(--gold);"><span onclick="viewLineage(\''+agent+'\',\''+f+'\')">'+f+'</span><button class="btn btn-secondary" onclick="deleteLineage(\''+agent+'\',\''+f+'\')">Remove</button></div>';
+            }).join('');
+          } else {
+            document.getElementById('lineage-list').innerHTML = '<div class="empty" style="padding: 20px;">No lineage defined</div>';
+          }
+        })
+        .catch(function() { document.getElementById('lineage-list').innerHTML = '<div class="empty" style="padding: 20px;">Failed to load</div>'; });
       
       // Load curriculum
       fetch(API + '/agents/' + agent + '/private/curriculum', { credentials: 'same-origin' })
@@ -4101,6 +4198,49 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
       if (!confirm('Remove private doc ' + filename + '?')) return;
       fetch(API + '/agents/' + agent + '/private/uploads/' + encodeURIComponent(filename), { method: 'DELETE', credentials: 'same-origin' })
         .then(function() { showStatus('codex-status', 'Removed', 'success'); loadPrivateMemory(); })
+        .catch(function() { showStatus('codex-status', 'Failed', 'error'); });
+    }
+    
+    // Lineage uploads
+    var lineageUploadZone = document.getElementById('lineage-upload-zone');
+    var lineageFileInput = document.getElementById('lineage-file-input');
+    if (lineageUploadZone && lineageFileInput) {
+      lineageUploadZone.addEventListener('click', function() { lineageFileInput.click(); });
+      lineageUploadZone.addEventListener('dragover', function(e) { e.preventDefault(); lineageUploadZone.style.borderColor = 'var(--gold)'; });
+      lineageUploadZone.addEventListener('dragleave', function() { lineageUploadZone.style.borderColor = ''; });
+      lineageUploadZone.addEventListener('drop', function(e) { e.preventDefault(); lineageUploadZone.style.borderColor = ''; if (e.dataTransfer.files.length > 0) handleLineageUpload(e.dataTransfer.files[0]); });
+      lineageFileInput.addEventListener('change', function(e) { if (e.target.files.length > 0) handleLineageUpload(e.target.files[0]); });
+    }
+    
+    function handleLineageUpload(file) {
+      var agent = document.getElementById('codex-agent').value;
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        fetch(API + '/agents/' + agent + '/lineage/' + encodeURIComponent(file.name), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: e.target.result }),
+          credentials: 'same-origin'
+        }).then(function(res) { return res.json(); }).then(function(data) {
+          if (data.success) { showStatus('codex-status', 'Lineage uploaded: ' + file.name, 'success'); loadPrivateMemory(); }
+          else { showStatus('codex-status', 'Upload failed', 'error'); }
+        }).catch(function() { showStatus('codex-status', 'Upload failed', 'error'); });
+      };
+      reader.readAsText(file);
+      lineageFileInput.value = '';
+    }
+    
+    function viewLineage(agent, filename) {
+      fetch(API + '/agents/' + agent + '/lineage/' + encodeURIComponent(filename), { credentials: 'same-origin' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) { alert('Lineage - ' + filename + ':\n\n' + (data.content || 'Empty')); })
+        .catch(function() { showStatus('codex-status', 'Failed to load', 'error'); });
+    }
+    
+    function deleteLineage(agent, filename) {
+      if (!confirm('Remove lineage file ' + filename + '?')) return;
+      fetch(API + '/agents/' + agent + '/lineage/' + encodeURIComponent(filename), { method: 'DELETE', credentials: 'same-origin' })
+        .then(function() { showStatus('codex-status', 'Lineage removed', 'success'); loadPrivateMemory(); })
         .catch(function() { showStatus('codex-status', 'Failed', 'error'); });
     }
     
