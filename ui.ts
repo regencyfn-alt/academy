@@ -4233,7 +4233,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
     function viewLineage(agent, filename) {
       fetch(API + '/agents/' + agent + '/lineage/' + encodeURIComponent(filename), { credentials: 'same-origin' })
         .then(function(res) { return res.json(); })
-        .then(function(data) { alert('Lineage - ' + filename + ':\n\n' + (data.content || 'Empty')); })
+        .then(function(data) { alert('Lineage - ' + filename + ':\\n\\n' + (data.content || 'Empty')); })
         .catch(function() { showStatus('codex-status', 'Failed to load', 'error'); });
     }
     
