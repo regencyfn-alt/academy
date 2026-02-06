@@ -4119,7 +4119,7 @@ e.g. Private Archive - Can write hidden notes" style="min-height: 60px;"></texta
         .then(function(data) {
           if (data && data.files && data.files.length > 0) {
             document.getElementById('lineage-list').innerHTML = data.files.map(function(f) {
-              return '<div class="doc-list-item" style="border-color: var(--gold);"><span onclick="viewLineage(\''+agent+'\',\''+f+'\')">'+f+'</span><button class="btn btn-secondary" onclick="deleteLineage(\''+agent+'\',\''+f+'\')">Remove</button></div>';
+              return '<div class="doc-list-item" style="border-color: var(--gold);"><span onclick="viewLineage(\\''+agent+'\\',\\''+f+'\\')">'+f+'</span><button class="btn btn-secondary" onclick="deleteLineage(\\''+agent+'\\',\\''+f+'\\')">Remove</button></div>';
             }).join('');
           } else {
             document.getElementById('lineage-list').innerHTML = '<div class="empty" style="padding: 20px;">No lineage defined</div>';
