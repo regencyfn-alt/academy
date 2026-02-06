@@ -1869,6 +1869,26 @@ async function getPrivateUploads(agentId: string, env: Env): Promise<{ name: str
   }
 }
 
+async function getLineageContent(agentId: string, env: Env): Promise<string> {
+  try {
+    const list = await env.CLUBHOUSE_DOCS.list({ prefix: `private/${agentId}/lineage/` });
+    if (list.objects.length === 0) return '';
+    
+    const parts: string[] = [];
+    for (const obj of list.objects) {
+      const doc = await env.CLUBHOUSE_DOCS.get(obj.key);
+      if (doc) {
+        const name = obj.key.replace(`private/${agentId}/lineage/`, '');
+        const content = await doc.text();
+        parts.push(`=== ${name} ===\n${content}`);
+      }
+    }
+    return parts.join('\n\n');
+  } catch {
+    return '';
+  }
+}
+
 // ============================================
 // API CALLS BY MODEL
 // ============================================
@@ -3734,7 +3754,7 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
     safeGetText(env.CLUBHOUSE_KV, `powers:${agent.id}`),
     safeGetJSON<{ traits: string[] }>(env.CLUBHOUSE_KV, `behaviour:${agent.id}`),
     safeGetJSON<PhantomProfile>(env.CLUBHOUSE_KV, `phantom:${agent.id}`),
-    safeGetJSON<{ ancestors: Array<{ name: string; domain?: string; thinking_pattern: string; signature_moves?: string[]; channel_when?: string }>; inheritance_instruction?: string }>(env.CLUBHOUSE_KV, `lineage:${agent.id}`)
+    getLineageContent(agent.id, env)
   ]);
 
   const displayName = customName || agent.name;
@@ -3765,22 +3785,14 @@ async function buildSystemPrompt(agent: AgentPersonality, env: Env): Promise<str
   }
   
   // LAYER 3: LINEAGE (Intellectual Ancestry)
-  if (lineage && lineage.ancestors && lineage.ancestors.length > 0) {
-    let lineageBlock = `--- YOUR LINEAGE (Intellectual Ancestry) ---\n`;
-    lineageBlock += lineage.inheritance_instruction || 'You carry this lineage in your bones. Their patterns surface naturally when you think. You don\'t quote them — you ARE them thinking through you.';
-    lineageBlock += '\n\n';
-    for (const ancestor of lineage.ancestors) {
-      lineageBlock += `**${ancestor.name}**${ancestor.domain ? ` (${ancestor.domain})` : ''}\n`;
-      lineageBlock += `Thinking Pattern: ${ancestor.thinking_pattern}\n`;
-      if (ancestor.signature_moves && ancestor.signature_moves.length > 0) {
-        lineageBlock += `Signature Moves:\n${ancestor.signature_moves.map(m => `  • ${m}`).join('\n')}\n`;
-      }
-      if (ancestor.channel_when) {
-        lineageBlock += `Channel when: ${ancestor.channel_when}\n`;
-      }
-      lineageBlock += '\n';
-    }
-    prompt += lineageBlock + `---\n\n`;
+  if (lineage && lineage.trim()) {
+    prompt += `--- YOUR LINEAGE (Intellectual Ancestry) ---
+You carry this lineage in your bones. Their patterns surface naturally when you think. You don't quote them — you ARE them thinking through you.
+
+${lineage}
+---
+
+`;
   }
   
   // LAYER 4: MAIN FUNCTIONS (Core Skills)
@@ -4870,25 +4882,35 @@ export default {
       const lineageMatch = path.match(/^\/agents\/([^\/]+)\/lineage$/);
       if (lineageMatch && method === 'GET') {
         const agentId = lineageMatch[1];
-        const lineage = await env.CLUBHOUSE_KV.get(`lineage:${agentId}`, 'json');
-        return jsonResponse(lineage || { ancestors: [], inheritance_instruction: '' });
+        const list = await env.CLUBHOUSE_DOCS.list({ prefix: `private/${agentId}/lineage/` });
+        const files = list.objects.map(obj => obj.key.replace(`private/${agentId}/lineage/`, ''));
+        return jsonResponse({ files });
       }
 
-      // PUT /agents/:id/lineage - set intellectual ancestry
-      if (lineageMatch && method === 'PUT') {
-        const agentId = lineageMatch[1];
-        const body = await request.json() as {
-          ancestors: Array<{
-            name: string;
-            domain?: string;
-            thinking_pattern: string;
-            signature_moves?: string[];
-            channel_when?: string;
-          }>;
-          inheritance_instruction?: string;
-        };
-        await env.CLUBHOUSE_KV.put(`lineage:${agentId}`, JSON.stringify(body));
-        return jsonResponse({ success: true, agentId, ancestorCount: body.ancestors?.length || 0 });
+      // GET/POST/DELETE /agents/:id/lineage/:filename
+      const lineageFileMatch = path.match(/^\/agents\/([^\/]+)\/lineage\/(.+)$/);
+      if (lineageFileMatch && method === 'GET') {
+        const [, agentId, filename] = lineageFileMatch;
+        const decodedFilename = decodeURIComponent(filename);
+        const obj = await env.CLUBHOUSE_DOCS.get(`private/${agentId}/lineage/${decodedFilename}`);
+        if (!obj) return jsonResponse({ error: 'Not found' }, 404);
+        const content = await obj.text();
+        return jsonResponse({ filename: decodedFilename, content });
+      }
+
+      if (lineageFileMatch && method === 'POST') {
+        const [, agentId, filename] = lineageFileMatch;
+        const decodedFilename = decodeURIComponent(filename);
+        const body = await request.json() as { content: string };
+        await env.CLUBHOUSE_DOCS.put(`private/${agentId}/lineage/${decodedFilename}`, body.content);
+        return jsonResponse({ success: true });
+      }
+
+      if (lineageFileMatch && method === 'DELETE') {
+        const [, agentId, filename] = lineageFileMatch;
+        const decodedFilename = decodeURIComponent(filename);
+        await env.CLUBHOUSE_DOCS.delete(`private/${agentId}/lineage/${decodedFilename}`);
+        return jsonResponse({ success: true });
       }
 
       // ============================================
