@@ -1685,7 +1685,7 @@ async function callClaude(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
       temperature,
       system: systemContent,
@@ -1745,7 +1745,7 @@ async function callClaudeWithImage(prompt: string, systemPrompt: string, imageBa
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
       system: systemContent,
       messages: [{
@@ -2945,7 +2945,7 @@ Continue immediately with the full 4-Part Rigor Protocol. Do not repeat what you
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-opus-4-5-20251101',
+          model: 'claude-sonnet-4-20250514',
           max_tokens: 8192,
           temperature: 0.7,
           messages: [{ role: 'user', content: continuationPrompt }]
